@@ -1,11 +1,22 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "./supabase";
 
-type MenuItem = {
-  name: string;
-  icon: string;
+type Producto = {
+  id: string;
+  codigo_interno: string | null;
+  codigo_barras: string | null;
+  nombre: string;
+  categoria: string | null;
+  marca: string | null;
+  costo_ultima_compra: number | null;
+  margen_ganancia: number | null;
+  precio_venta: number | null;
+  stock_actual: number | null;
+  stock_minimo: number | null;
+  activo: boolean | null;
 };
 
-const menuItems: MenuItem[] = [
+const menuItems = [
   { name: "Inicio", icon: "⌂" },
   { name: "Productos", icon: "▣" },
   { name: "Ventas", icon: "▤" },
@@ -35,7 +46,11 @@ function App() {
           {menuItems.map((item) => (
             <button
               key={item.name}
-              className={active === item.name ? "menu-item active" : "menu-item"}
+              className={
+                active === item.name
+                  ? "menu-item active"
+                  : "menu-item"
+              }
               onClick={() => setActive(item.name)}
             >
               <span className="menu-icon">{item.icon}</span>
@@ -64,9 +79,7 @@ function App() {
           </div>
 
           <div className="topbar-actions">
-            <button className="icon-button" title="Notificaciones">
-              🔔
-            </button>
+            <button className="icon-button">🔔</button>
 
             <button className="admin-button">
               Administrador
@@ -79,9 +92,10 @@ function App() {
 
           {active === "Productos" && <Products />}
 
-          {active !== "Inicio" && active !== "Productos" && (
-            <ComingSoon title={active} />
-          )}
+          {active !== "Inicio" &&
+            active !== "Productos" && (
+              <ComingSoon title={active} />
+            )}
         </section>
       </main>
     </div>
@@ -113,8 +127,8 @@ function Dashboard() {
 
         <Stat
           title="Productos"
-          value="0"
-          description="Catálogo de productos"
+          value="Conectado"
+          description="Supabase conectado"
         />
 
         <Stat
@@ -141,9 +155,11 @@ function Dashboard() {
 
           <div className="empty-state">
             <div className="empty-icon">▣</div>
-            <strong>No hay movimientos todavía</strong>
+
+            <strong>Sistema conectado</strong>
+
             <span>
-              Las ventas, compras y movimientos de stock aparecerán aquí.
+              La aplicación ya puede comunicarse con Supabase.
             </span>
           </div>
         </div>
@@ -184,13 +200,55 @@ function Dashboard() {
 }
 
 function Products() {
+  const [productos, setProductos] = useState<Producto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    loadProducts();
+  }, []);
+
+  async function loadProducts() {
+    setLoading(true);
+    setError("");
+
+    const { data, error } = await supabase
+      .from("productos")
+      .select("*")
+      .order("nombre", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      setError(error.message);
+      setProductos([]);
+    } else {
+      setProductos(data || []);
+    }
+
+    setLoading(false);
+  }
+
+  const filteredProducts = productos.filter((producto) => {
+    const text = `
+      ${producto.nombre}
+      ${producto.codigo_interno || ""}
+      ${producto.codigo_barras || ""}
+      ${producto.marca || ""}
+      ${producto.categoria || ""}
+    `.toLowerCase();
+
+    return text.includes(search.toLowerCase());
+  });
+
   return (
     <div className="products-page">
       <div className="page-header">
         <div>
           <h2>Productos</h2>
+
           <p>
-            Administrá productos, códigos de barras, costos, precios y stock.
+            Productos almacenados en Supabase.
           </p>
         </div>
 
@@ -202,41 +260,143 @@ function Products() {
       <div className="product-tools">
         <input
           type="search"
-          placeholder="Buscar por producto o código de barras..."
+          placeholder="Buscar producto, código o código de barras..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
         />
 
-        <select defaultValue="">
-          <option value="" disabled>
-            Categoría
-          </option>
-          <option value="all">Todas</option>
-        </select>
-
-        <select defaultValue="">
-          <option value="" disabled>
-            Estado
-          </option>
-          <option value="active">Activos</option>
-          <option value="inactive">Inactivos</option>
-        </select>
+        <button
+          className="admin-button"
+          onClick={loadProducts}
+        >
+          ↻ Actualizar
+        </button>
       </div>
 
-      <div className="panel">
-        <div className="empty-products">
-          <div className="empty-icon large">📦</div>
+      {loading && (
+        <div className="panel">
+          <div className="empty-products">
+            <div className="empty-icon large">⏳</div>
 
-          <h3>No hay productos cargados</h3>
+            <h3>Cargando productos...</h3>
 
-          <p>
-            Cuando conectemos esta pantalla con Supabase,
-            tus productos aparecerán automáticamente aquí.
-          </p>
-
-          <button className="primary-button">
-            + Cargar primer producto
-          </button>
+            <p>
+              Consultando la base de datos.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
+
+      {!loading && error && (
+        <div className="panel">
+          <div className="empty-products">
+            <div className="empty-icon large">⚠️</div>
+
+            <h3>No se pudieron cargar los productos</h3>
+
+            <p>{error}</p>
+
+            <button
+              className="primary-button"
+              onClick={loadProducts}
+            >
+              Intentar nuevamente
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!loading && !error && productos.length === 0 && (
+        <div className="panel">
+          <div className="empty-products">
+            <div className="empty-icon large">📦</div>
+
+            <h3>No hay productos cargados</h3>
+
+            <p>
+              La conexión funciona correctamente, pero todavía
+              no hay productos registrados.
+            </p>
+
+            <button className="primary-button">
+              + Cargar primer producto
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!loading &&
+        !error &&
+        productos.length > 0 && (
+          <div className="panel">
+            <div className="table-wrapper">
+              <table className="products-table">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Código</th>
+                    <th>Código de barras</th>
+                    <th>Costo</th>
+                    <th>Precio venta</th>
+                    <th>Stock</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {filteredProducts.map((producto) => (
+                    <tr key={producto.id}>
+                      <td>
+                        <strong>{producto.nombre}</strong>
+
+                        {producto.marca && (
+                          <small>{producto.marca}</small>
+                        )}
+                      </td>
+
+                      <td>
+                        {producto.codigo_interno || "-"}
+                      </td>
+
+                      <td>
+                        {producto.codigo_barras || "-"}
+                      </td>
+
+                      <td>
+                        $
+                        {(producto.costo_ultima_compra || 0).toLocaleString(
+                          "es-AR",
+                          {
+                            minimumFractionDigits: 2,
+                          }
+                        )}
+                      </td>
+
+                      <td>
+                        $
+                        {(producto.precio_venta || 0).toLocaleString(
+                          "es-AR",
+                          {
+                            minimumFractionDigits: 2,
+                          }
+                        )}
+                      </td>
+
+                      <td>
+                        {producto.stock_actual || 0}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {filteredProducts.length === 0 && (
+                <div className="table-empty">
+                  No encontramos productos con esa búsqueda.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
     </div>
   );
 }
@@ -253,21 +413,29 @@ function Stat({
   return (
     <div className="stat-card">
       <span>{title}</span>
+
       <strong>{value}</strong>
+
       <small>{description}</small>
     </div>
   );
 }
 
-function ComingSoon({ title }: { title: string }) {
+function ComingSoon({
+  title,
+}: {
+  title: string;
+}) {
   return (
     <div className="panel coming-soon">
-      <div className="empty-icon large">⚙️</div>
+      <div className="empty-icon large">
+        ⚙️
+      </div>
 
       <h2>{title}</h2>
 
       <p>
-        Este módulo será incorporado en las próximas fases del sistema.
+        Este módulo será incorporado en las próximas fases.
       </p>
     </div>
   );
