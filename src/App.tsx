@@ -1,42 +1,19 @@
 async function loadProducts() {
-  setLoading(true);
-  setError("");
+    setLoading(true);
+    setError("");
 
-  try {
-    const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/productos?select=*´,
-      {
-        method: "GET",
-        headers: {
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        },
-      }
-    );
+    const { data, error } = await supabase
+      .from("productos")
+      .select("*")
+      .order("nombre", { ascending: true });
 
-    const result = await response.json();
-
-    console.log("SUPABASE RESPONSE:", result);
-
-    if (!response.ok) {
-      throw new Error(
-        result?.message ||
-        result?.error ||
-        `Error HTTP ${response.status}´
-      );
+    if (error) {
+      console.error(error);
+      setError(error.message);
+      setProductos([]);
+    } else {
+      setProductos(data || []);
     }
 
-    setProductos(result || []);
-  } catch (err) {
-    console.error("ERROR PRODUCTOS:", err);
-
-    setError(
-      err instanceof Error
-        ? err.message
-        : "Error desconocido al cargar productos"
-    );
-
-    setProductos([]);
+    setLoading(false);
   }
-
-  setLoading(false);
-}
