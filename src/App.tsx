@@ -1,18 +1,21 @@
 function App() {
   return (
-    <main className="initial-screen">
-      <div className="initial-card">
-        <div className="logo">C</div>
-
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: "Arial, sans-serif",
+        background: "#f4f6f9",
+      }}
+    >
+      <div style={{ textAlign: "center" }}>
         <h1>COMERCIAL</h1>
-
         <p>Gestión Comercial</p>
-
-        <span>
-          Sistema iniciado correctamente
-        </span>
+        <p>Sistema iniciado correctamente</p>
       </div>
-    </main>
+    </div>
   );
 }
 
