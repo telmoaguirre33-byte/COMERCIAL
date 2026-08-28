@@ -1,14 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl =
-  import.meta.env.VITE_SUPABASE_URL?.trim().replace(/\/+$/, "");
-
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabasePublishableKey =
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 if (!supabaseUrl || !supabasePublishableKey) {
   throw new Error(
-    "Faltan VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY"
+    "Faltan las variables VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY"
   );
 }
 
