@@ -5,10 +5,10 @@ const supabasePublishableKey =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 if (!supabaseUrl || !supabasePublishableKey) {
-  throw new Error(
-    "Faltan VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY"
-  );
+  throw new Error("Faltan las variables de Supabase");
 }
+
+console.log("SUPABASE URL:", supabaseUrl);
 
 export const supabase = createClient(
   supabaseUrl,
