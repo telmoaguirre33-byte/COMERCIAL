@@ -4,7 +4,7 @@ async function loadProducts() {
 
   try {
     const response = await fetch(
-      ${import.meta.env.VITE_SUPABASE_URL}/rest/v1/productos?select=*,
+      `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/productos?select=*´,
       {
         method: "GET",
         headers: {
@@ -21,7 +21,7 @@ async function loadProducts() {
       throw new Error(
         result?.message ||
         result?.error ||
-        Error HTTP ${response.status}
+        `Error HTTP ${response.status}´
       );
     }
 
