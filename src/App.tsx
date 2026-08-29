@@ -60,7 +60,7 @@ type Compra = {
   descuento: number | null;
   iva_total: number | null;
   estado: string | null;
-  documento: string | null;
+  documento_url: string | null;
   origen: string | null;
 };
 
@@ -690,6 +690,7 @@ function ProductForm({
 
         <form onSubmit={guardarProducto}>
           <label>Nombre *</label>
+
           <input
             required
             value={nombre}
@@ -700,6 +701,7 @@ function ProductForm({
           />
 
           <label>Codigo interno</label>
+
           <input
             value={codigoInterno}
             onChange={(e) =>
@@ -709,6 +711,7 @@ function ProductForm({
           />
 
           <label>Codigo de barras</label>
+
           <input
             value={codigoBarras}
             onChange={(e) =>
@@ -718,6 +721,7 @@ function ProductForm({
           />
 
           <label>Categoria</label>
+
           <select
             value={categoria}
             onChange={(e) =>
@@ -741,6 +745,7 @@ function ProductForm({
           </select>
 
           <label>Marca</label>
+
           <select
             value={marca}
             onChange={(e) =>
@@ -764,6 +769,7 @@ function ProductForm({
           </select>
 
           <label>Proveedor</label>
+
           <select
             value={proveedor}
             onChange={(e) =>
@@ -793,6 +799,7 @@ function ProductForm({
           )}
 
           <label>Costo actual</label>
+
           <input
             type="number"
             step="0.01"
@@ -805,6 +812,7 @@ function ProductForm({
           />
 
           <label>Precio de venta</label>
+
           <input
             type="number"
             step="0.01"
@@ -838,6 +846,7 @@ function ProductForm({
             )}
 
           <label>Stock actual</label>
+
           <input
             type="number"
             step="0.01"
@@ -850,6 +859,7 @@ function ProductForm({
           />
 
           <label>Stock minimo</label>
+
           <input
             type="number"
             step="0.01"
@@ -923,7 +933,7 @@ function Purchases() {
       supabase
         .from("compras")
         .select(
-          "id,proveedor_id,tipo_comprobante,punto_venta,numero_comprobante,fecha_compra,subtotal,descuento,iva_total,estado,documento,origen"
+          "id,proveedor_id,tipo_comprobante,punto_venta,numero_comprobante,fecha_compra,subtotal,descuento,iva_total,estado,documento_url,origen"
         )
         .order("fecha_compra", {
           ascending: false,
@@ -1134,6 +1144,7 @@ function Purchases() {
     </div>
   );
 }
+
 function PurchaseForm({
   proveedores,
   productos,
@@ -1314,9 +1325,7 @@ function PurchaseForm({
           descuento: descuentoNumero,
           iva_total: ivaNumero,
           estado: "confirmada",
-
-          documento: null,
-
+          documento_url: null,
           origen: "manual",
         })
         .select("id")
@@ -1896,7 +1905,6 @@ function PurchaseForm({
     </div>
   );
 }
-
 function Suppliers() {
   const [proveedores, setProveedores] =
     useState<Proveedor[]>([]);
