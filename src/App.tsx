@@ -49,6 +49,28 @@ type Proveedor = {
   direccion: string | null;
 };
 
+type Compra = {
+  id: string;
+  proveedor_id: string | null;
+  tipo_comprobante: string | null;
+  punto_venta: string | null;
+  numero_comprobante: string | null;
+  fecha_compra: string | null;
+  subtotal: number | null;
+  descuento: number | null;
+  iva_total: number | null;
+  estado: string | null;
+  documento_origen: string | null;
+};
+
+type DetalleCompraForm = {
+  tempId: string;
+  producto_id: string;
+  descripcion: string;
+  cantidad: string;
+  precio_unitario: string;
+};
+
 const menuItems = [
   { name: "Inicio", icon: "I" },
   { name: "Productos", icon: "P" },
@@ -125,10 +147,12 @@ function App() {
         <section className="content">
           {active === "Inicio" && <Dashboard />}
           {active === "Productos" && <Products />}
+          {active === "Compras" && <Purchases />}
           {active === "Proveedores" && <Suppliers />}
 
           {active !== "Inicio" &&
             active !== "Productos" &&
+            active !== "Compras" &&
             active !== "Proveedores" && (
               <ComingSoon title={active} />
             )}
@@ -186,13 +210,24 @@ function Dashboard() {
 }
 
 function Products() {
-  const [productos, setProductos] = useState<Producto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [showForm, setShowForm] = useState(false);
+  const [productos, setProductos] =
+    useState<Producto[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState("");
+
+  const [search, setSearch] =
+    useState("");
+
+  const [showForm, setShowForm] =
+    useState(false);
+
   const [productoEditar, setProductoEditar] =
     useState<Producto | null>(null);
+
   const [deletingId, setDeletingId] =
     useState<string | null>(null);
 
@@ -207,20 +242,26 @@ function Products() {
     const resultado = await supabase
       .from("productos")
       .select("*")
-      .order("nombre", { ascending: true });
+      .order("nombre", {
+        ascending: true,
+      });
 
     if (resultado.error) {
       console.error(resultado.error);
       setError(resultado.error.message);
       setProductos([]);
     } else {
-      setProductos((resultado.data || []) as Producto[]);
+      setProductos(
+        (resultado.data || []) as Producto[]
+      );
     }
 
     setLoading(false);
   }
 
-  async function eliminarProducto(producto: Producto) {
+  async function eliminarProducto(
+    producto: Producto
+  ) {
     const confirmar = window.confirm(
       'Seguro que queres eliminar "' +
         producto.nombre +
@@ -254,27 +295,33 @@ function Products() {
     await loadProducts();
   }
 
-  const filteredProducts = productos.filter((producto) => {
-    const text = [
-      producto.nombre,
-      producto.codigo_interno || "",
-      producto.codigo_barras || "",
-      producto.marca || "",
-      producto.categoria || "",
-      producto.proveedor || "",
-    ]
-      .join(" ")
-      .toLowerCase();
+  const filteredProducts = productos.filter(
+    (producto) => {
+      const text = [
+        producto.nombre,
+        producto.codigo_interno || "",
+        producto.codigo_barras || "",
+        producto.marca || "",
+        producto.categoria || "",
+        producto.proveedor || "",
+      ]
+        .join(" ")
+        .toLowerCase();
 
-    return text.includes(search.toLowerCase());
-  });
+      return text.includes(
+        search.toLowerCase()
+      );
+    }
+  );
 
   function abrirNuevoProducto() {
     setProductoEditar(null);
     setShowForm(true);
   }
 
-  function abrirEditarProducto(producto: Producto) {
+  function abrirEditarProducto(
+    producto: Producto
+  ) {
     setProductoEditar(producto);
     setShowForm(true);
   }
@@ -295,7 +342,9 @@ function Products() {
       <div className="page-header">
         <div>
           <h2>Productos</h2>
-          <p>Administra productos, codigos, precios y stock.</p>
+          <p>
+            Administra productos, codigos, precios y stock.
+          </p>
         </div>
 
         <button
@@ -311,7 +360,9 @@ function Products() {
           type="search"
           placeholder="Buscar producto, codigo o codigo de barras..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) =>
+            setSearch(e.target.value)
+          }
         />
 
         <button
@@ -335,120 +386,138 @@ function Products() {
         </div>
       )}
 
-      {!loading && !error && productos.length === 0 && (
-        <div className="panel">
-          <div className="empty-products">
-            <h3>No hay productos cargados</h3>
-            <p>Todavia no hay productos registrados.</p>
+      {!loading &&
+        !error &&
+        productos.length === 0 && (
+          <div className="panel">
+            <div className="empty-products">
+              <h3>No hay productos cargados</h3>
 
-            <button
-              className="primary-button"
-              onClick={abrirNuevoProducto}
-            >
-              + Cargar primer producto
-            </button>
+              <p>
+                Todavia no hay productos registrados.
+              </p>
+
+              <button
+                className="primary-button"
+                onClick={abrirNuevoProducto}
+              >
+                + Cargar primer producto
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {!loading && !error && productos.length > 0 && (
-        <div className="panel">
-          <div className="table-wrapper">
-            <table className="products-table">
-              <thead>
-                <tr>
-                  <th>Producto</th>
-                  <th>Codigo</th>
-                  <th>Codigo de barras</th>
-                  <th>Costo</th>
-                  <th>Precio venta</th>
-                  <th>Stock</th>
-                  <th>Acciones</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {filteredProducts.map((producto) => (
-                  <tr key={producto.id}>
-                    <td>
-                      <strong>{producto.nombre}</strong>
-
-                      {producto.marca && (
-                        <small>{producto.marca}</small>
-                      )}
-                    </td>
-
-                    <td>
-                      {producto.codigo_interno || "-"}
-                    </td>
-
-                    <td>
-                      {producto.codigo_barras || "-"}
-                    </td>
-
-                    <td>
-                      $
-                      {Number(
-                        producto.costo_actual || 0
-                      ).toLocaleString("es-AR", {
-                        minimumFractionDigits: 2,
-                      })}
-                    </td>
-
-                    <td>
-                      $
-                      {Number(
-                        producto.precio_venta || 0
-                      ).toLocaleString("es-AR", {
-                        minimumFractionDigits: 2,
-                      })}
-                    </td>
-
-                    <td>
-                      {producto.stock_actual || 0}
-                    </td>
-
-                    <td>
-                      <div style={actionButtonsStyle}>
-                        <button
-                          type="button"
-                          className="admin-button"
-                          onClick={() =>
-                            abrirEditarProducto(producto)
-                          }
-                        >
-                          Editar
-                        </button>
-
-                        <button
-                          type="button"
-                          style={deleteButtonStyle}
-                          disabled={
-                            deletingId === producto.id
-                          }
-                          onClick={() =>
-                            eliminarProducto(producto)
-                          }
-                        >
-                          {deletingId === producto.id
-                            ? "Eliminando..."
-                            : "Eliminar"}
-                        </button>
-                      </div>
-                    </td>
+      {!loading &&
+        !error &&
+        productos.length > 0 && (
+          <div className="panel">
+            <div className="table-wrapper">
+              <table className="products-table">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Codigo</th>
+                    <th>Codigo de barras</th>
+                    <th>Costo</th>
+                    <th>Precio venta</th>
+                    <th>Stock</th>
+                    <th>Acciones</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
 
-            {filteredProducts.length === 0 && (
-              <div className="table-empty">
-                No encontramos productos con esa busqueda.
-              </div>
-            )}
+                <tbody>
+                  {filteredProducts.map(
+                    (producto) => (
+                      <tr key={producto.id}>
+                        <td>
+                          <strong>
+                            {producto.nombre}
+                          </strong>
+
+                          {producto.marca && (
+                            <small>
+                              {producto.marca}
+                            </small>
+                          )}
+                        </td>
+
+                        <td>
+                          {producto.codigo_interno || "-"}
+                        </td>
+
+                        <td>
+                          {producto.codigo_barras || "-"}
+                        </td>
+
+                        <td>
+                          $
+                          {Number(
+                            producto.costo_actual || 0
+                          ).toLocaleString("es-AR", {
+                            minimumFractionDigits: 2,
+                          })}
+                        </td>
+
+                        <td>
+                          $
+                          {Number(
+                            producto.precio_venta || 0
+                          ).toLocaleString("es-AR", {
+                            minimumFractionDigits: 2,
+                          })}
+                        </td>
+
+                        <td>
+                          {producto.stock_actual || 0}
+                        </td>
+
+                        <td>
+                          <div style={actionButtonsStyle}>
+                            <button
+                              type="button"
+                              className="admin-button"
+                              onClick={() =>
+                                abrirEditarProducto(
+                                  producto
+                                )
+                              }
+                            >
+                              Editar
+                            </button>
+
+                            <button
+                              type="button"
+                              style={deleteButtonStyle}
+                              disabled={
+                                deletingId ===
+                                producto.id
+                              }
+                              onClick={() =>
+                                eliminarProducto(
+                                  producto
+                                )
+                              }
+                            >
+                              {deletingId === producto.id
+                                ? "Eliminando..."
+                                : "Eliminar"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  )}
+                </tbody>
+              </table>
+
+              {filteredProducts.length === 0 && (
+                <div className="table-empty">
+                  No encontramos productos con esa busqueda.
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       {showForm && (
         <ProductForm
@@ -992,6 +1061,1048 @@ function ProductForm({
     </div>
   );
 }
+
+function Purchases() {
+  const [compras, setCompras] =
+    useState<Compra[]>([]);
+
+  const [proveedores, setProveedores] =
+    useState<ProveedorCatalogo[]>([]);
+
+  const [productos, setProductos] =
+    useState<Producto[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState("");
+
+  const [showForm, setShowForm] =
+    useState(false);
+
+  useEffect(() => {
+    cargarCompras();
+  }, []);
+
+  async function cargarCompras() {
+    setLoading(true);
+    setError("");
+
+    const [
+      resultadoCompras,
+      resultadoProveedores,
+      resultadoProductos,
+    ] = await Promise.all([
+      supabase
+        .from("compras")
+        .select(
+          "id,proveedor_id,tipo_comprobante,punto_venta,numero_comprobante,fecha_compra,subtotal,descuento,iva_total,estado,documento_origen"
+        )
+        .order("fecha_compra", {
+          ascending: false,
+        }),
+
+      supabase
+        .from("proveedores")
+        .select("id,razon_social,activo")
+        .eq("activo", true)
+        .order("razon_social", {
+          ascending: true,
+        }),
+
+      supabase
+        .from("productos")
+        .select("*")
+        .order("nombre", {
+          ascending: true,
+        }),
+    ]);
+
+    if (resultadoCompras.error) {
+      console.error(resultadoCompras.error);
+      setError(resultadoCompras.error.message);
+      setCompras([]);
+    } else {
+      setCompras(
+        (resultadoCompras.data || []) as Compra[]
+      );
+    }
+
+    if (!resultadoProveedores.error) {
+      setProveedores(
+        (resultadoProveedores.data ||
+          []) as ProveedorCatalogo[]
+      );
+    }
+
+    if (!resultadoProductos.error) {
+      setProductos(
+        (resultadoProductos.data || []) as Producto[]
+      );
+    }
+
+    setLoading(false);
+  }
+
+  function nombreProveedor(id: string | null) {
+    if (!id) {
+      return "-";
+    }
+
+    const proveedor = proveedores.find(
+      (item) => item.id === id
+    );
+
+    return proveedor?.razon_social || "-";
+  }
+
+  async function compraGuardada() {
+    setShowForm(false);
+    await cargarCompras();
+  }
+
+  return (
+    <div className="products-page">
+      <div className="page-header">
+        <div>
+          <h2>Compras</h2>
+
+          <p>
+            Registra compras y actualiza stock y costos.
+          </p>
+        </div>
+
+        <div style={actionButtonsStyle}>
+          <button
+            type="button"
+            className="admin-button"
+            onClick={() =>
+              window.alert(
+                "El escaneo de factura con IA se conecta en el siguiente paso."
+              )
+            }
+          >
+            Escanear factura con IA
+          </button>
+
+          <button
+            className="primary-button"
+            onClick={() =>
+              setShowForm(true)
+            }
+          >
+            + Nueva compra
+          </button>
+        </div>
+      </div>
+
+      {loading && (
+        <div className="panel">
+          <p>Cargando compras...</p>
+        </div>
+      )}
+
+      {!loading && error && (
+        <div className="panel">
+          <h3>
+            No se pudieron cargar las compras
+          </h3>
+          <p>{error}</p>
+        </div>
+      )}
+
+      {!loading &&
+        !error &&
+        compras.length === 0 && (
+          <div className="panel">
+            <div className="empty-products">
+              <h3>No hay compras cargadas</h3>
+
+              <p>
+                Podes cargar una compra manualmente o,
+                proximamente, escanear una factura con IA.
+              </p>
+
+              <button
+                className="primary-button"
+                onClick={() =>
+                  setShowForm(true)
+                }
+              >
+                + Cargar primera compra
+              </button>
+            </div>
+          </div>
+        )}
+
+      {!loading &&
+        !error &&
+        compras.length > 0 && (
+          <div className="panel">
+            <div className="table-wrapper">
+              <table className="products-table">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Proveedor</th>
+                    <th>Comprobante</th>
+                    <th>Subtotal</th>
+                    <th>IVA</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {compras.map((compra) => (
+                    <tr key={compra.id}>
+                      <td>
+                        {compra.fecha_compra || "-"}
+                      </td>
+
+                      <td>
+                        {nombreProveedor(
+                          compra.proveedor_id
+                        )}
+                      </td>
+
+                      <td>
+                        {[
+                          compra.tipo_comprobante,
+                          compra.punto_venta,
+                          compra.numero_comprobante,
+                        ]
+                          .filter(Boolean)
+                          .join(" ") || "-"}
+                      </td>
+
+                      <td>
+                        $
+                        {Number(
+                          compra.subtotal || 0
+                        ).toLocaleString("es-AR", {
+                          minimumFractionDigits: 2,
+                        })}
+                      </td>
+
+                      <td>
+                        $
+                        {Number(
+                          compra.iva_total || 0
+                        ).toLocaleString("es-AR", {
+                          minimumFractionDigits: 2,
+                        })}
+                      </td>
+
+                      <td>
+                        {compra.estado || "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+      {showForm && (
+        <PurchaseForm
+          proveedores={proveedores}
+          productos={productos}
+          onClose={() =>
+            setShowForm(false)
+          }
+          onSaved={compraGuardada}
+        />
+      )}
+    </div>
+  );
+}
+function PurchaseForm({
+  proveedores,
+  productos,
+  onClose,
+  onSaved,
+}: {
+  proveedores: ProveedorCatalogo[];
+  productos: Producto[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [proveedorId, setProveedorId] =
+    useState("");
+
+  const [tipoComprobante, setTipoComprobante] =
+    useState("Factura");
+
+  const [puntoVenta, setPuntoVenta] =
+    useState("");
+
+  const [numeroComprobante, setNumeroComprobante] =
+    useState("");
+
+  const [fechaCompra, setFechaCompra] =
+    useState(
+      new Date().toISOString().slice(0, 10)
+    );
+
+  const [descuento, setDescuento] =
+    useState("0");
+
+  const [ivaTotal, setIvaTotal] =
+    useState("0");
+
+  const [detalles, setDetalles] =
+    useState<DetalleCompraForm[]>([
+      crearDetalleVacio(),
+    ]);
+
+  const [saving, setSaving] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  function crearDetalleVacio(): DetalleCompraForm {
+    return {
+      tempId:
+        Date.now().toString() +
+        Math.random().toString(),
+      producto_id: "",
+      descripcion: "",
+      cantidad: "1",
+      precio_unitario: "",
+    };
+  }
+
+  function agregarLinea() {
+    setDetalles((actual) => [
+      ...actual,
+      crearDetalleVacio(),
+    ]);
+  }
+
+  function eliminarLinea(tempId: string) {
+    if (detalles.length === 1) {
+      return;
+    }
+
+    setDetalles((actual) =>
+      actual.filter(
+        (item) => item.tempId !== tempId
+      )
+    );
+  }
+
+  function modificarDetalle(
+    tempId: string,
+    campo: keyof DetalleCompraForm,
+    valor: string
+  ) {
+    setDetalles((actual) =>
+      actual.map((item) =>
+        item.tempId === tempId
+          ? {
+              ...item,
+              [campo]: valor,
+            }
+          : item
+      )
+    );
+  }
+
+  function seleccionarProducto(
+    tempId: string,
+    productoId: string
+  ) {
+    const producto = productos.find(
+      (item) => item.id === productoId
+    );
+
+    setDetalles((actual) =>
+      actual.map((item) =>
+        item.tempId === tempId
+          ? {
+              ...item,
+              producto_id: productoId,
+              descripcion:
+                producto?.nombre || "",
+              precio_unitario:
+                producto?.costo_actual != null
+                  ? String(
+                      producto.costo_actual
+                    )
+                  : "",
+            }
+          : item
+      )
+    );
+  }
+
+  const subtotal = detalles.reduce(
+    (total, item) => {
+      const cantidad =
+        Number(item.cantidad) || 0;
+
+      const precio =
+        Number(item.precio_unitario) || 0;
+
+      return total + cantidad * precio;
+    },
+    0
+  );
+
+  const descuentoNumero =
+    Number(descuento) || 0;
+
+  const ivaNumero =
+    Number(ivaTotal) || 0;
+
+  const totalCompra =
+    subtotal - descuentoNumero + ivaNumero;
+
+  async function guardarCompra(
+    e: FormEvent<HTMLFormElement>
+  ) {
+    e.preventDefault();
+    setError("");
+
+    if (!proveedorId) {
+      setError(
+        "Selecciona un proveedor."
+      );
+      return;
+    }
+
+    const lineasValidas =
+      detalles.filter(
+        (item) =>
+          item.producto_id &&
+          Number(item.cantidad) > 0 &&
+          Number(item.precio_unitario) >= 0
+      );
+
+    if (lineasValidas.length === 0) {
+      setError(
+        "Agrega por lo menos un producto."
+      );
+      return;
+    }
+
+    if (
+      lineasValidas.length !==
+      detalles.length
+    ) {
+      setError(
+        "Completa correctamente todos los productos de la compra."
+      );
+      return;
+    }
+
+    setSaving(true);
+
+    const resultadoCompra =
+      await supabase
+        .from("compras")
+        .insert({
+          proveedor_id: proveedorId,
+          tipo_comprobante:
+            tipoComprobante || null,
+          punto_venta:
+            puntoVenta.trim() || null,
+          numero_comprobante:
+            numeroComprobante.trim() ||
+            null,
+          fecha_compra:
+            fechaCompra || null,
+          subtotal,
+          descuento: descuentoNumero,
+          iva_total: ivaNumero,
+          estado: "confirmada",
+          documento_origen: "manual",
+        })
+        .select("id")
+        .single();
+
+    if (resultadoCompra.error) {
+      console.error(
+        resultadoCompra.error
+      );
+
+      setError(
+        resultadoCompra.error.message
+      );
+
+      setSaving(false);
+      return;
+    }
+
+    const compraId =
+      resultadoCompra.data.id;
+
+    const detalleParaGuardar =
+      lineasValidas.map((item) => {
+        const cantidad =
+          Number(item.cantidad);
+
+        const precio =
+          Number(item.precio_unitario);
+
+        return {
+          compra_id: compraId,
+          producto_id:
+            item.producto_id,
+          descripcion_factura:
+            item.descripcion || null,
+          cantidad,
+          precio_unitario: precio,
+          descuento: 0,
+          iva: 0,
+          subtotal:
+            cantidad * precio,
+          estado_match: "manual",
+          confianza_match: 1,
+        };
+      });
+
+    const resultadoDetalle =
+      await supabase
+        .from("detalle_compras")
+        .insert(detalleParaGuardar);
+
+    if (resultadoDetalle.error) {
+      console.error(
+        resultadoDetalle.error
+      );
+
+      setError(
+        "La compra se creo, pero hubo un error al guardar el detalle: " +
+          resultadoDetalle.error.message
+      );
+
+      setSaving(false);
+      return;
+    }
+
+    const acumulado =
+      new Map<
+        string,
+        {
+          cantidad: number;
+          costo: number;
+        }
+      >();
+
+    for (const linea of lineasValidas) {
+      const actual =
+        acumulado.get(
+          linea.producto_id
+        );
+
+      const cantidad =
+        Number(linea.cantidad);
+
+      const costo =
+        Number(
+          linea.precio_unitario
+        );
+
+      acumulado.set(
+        linea.producto_id,
+        {
+          cantidad:
+            (actual?.cantidad || 0) +
+            cantidad,
+          costo,
+        }
+      );
+    }
+
+    for (const [
+      productoId,
+      movimiento,
+    ] of acumulado.entries()) {
+      const producto =
+        productos.find(
+          (item) =>
+            item.id === productoId
+        );
+
+      const stockActual =
+        Number(
+          producto?.stock_actual || 0
+        );
+
+      const resultadoProducto =
+        await supabase
+          .from("productos")
+          .update({
+            stock_actual:
+              stockActual +
+              movimiento.cantidad,
+            costo_actual:
+              movimiento.costo,
+            costo_ultima_compra:
+              movimiento.costo,
+          })
+          .eq("id", productoId);
+
+      if (resultadoProducto.error) {
+        console.error(
+          resultadoProducto.error
+        );
+
+        setError(
+          "La compra se guardo, pero no se pudo actualizar el stock de todos los productos: " +
+            resultadoProducto.error.message
+        );
+
+        setSaving(false);
+        return;
+      }
+    }
+
+    setSaving(false);
+    onSaved();
+  }
+
+  return (
+    <div style={modalOverlayStyle}>
+      <div
+        style={{
+          ...modalStyle,
+          maxWidth: "1000px",
+        }}
+      >
+        <div style={modalHeaderStyle}>
+          <div>
+            <h2>Nueva compra</h2>
+
+            <p>
+              Carga la factura y los
+              productos comprados.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            style={closeButtonStyle}
+          >
+            X
+          </button>
+        </div>
+
+        <form onSubmit={guardarCompra}>
+          <div style={formGridStyle}>
+            <div>
+              <label>Proveedor *</label>
+
+              <select
+                required
+                value={proveedorId}
+                onChange={(e) =>
+                  setProveedorId(
+                    e.target.value
+                  )
+                }
+                style={inputStyle}
+              >
+                <option value="">
+                  Seleccionar proveedor
+                </option>
+
+                {proveedores.map(
+                  (proveedor) => (
+                    <option
+                      key={proveedor.id}
+                      value={proveedor.id}
+                    >
+                      {
+                        proveedor.razon_social
+                      }
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+
+            <div>
+              <label>
+                Tipo comprobante
+              </label>
+
+              <select
+                value={tipoComprobante}
+                onChange={(e) =>
+                  setTipoComprobante(
+                    e.target.value
+                  )
+                }
+                style={inputStyle}
+              >
+                <option value="Factura">
+                  Factura
+                </option>
+
+                <option value="Factura A">
+                  Factura A
+                </option>
+
+                <option value="Factura B">
+                  Factura B
+                </option>
+
+                <option value="Factura C">
+                  Factura C
+                </option>
+
+                <option value="Remito">
+                  Remito
+                </option>
+
+                <option value="Ticket">
+                  Ticket
+                </option>
+              </select>
+            </div>
+
+            <div>
+              <label>Punto de venta</label>
+
+              <input
+                value={puntoVenta}
+                onChange={(e) =>
+                  setPuntoVenta(
+                    e.target.value
+                  )
+                }
+                style={inputStyle}
+                placeholder="0001"
+              />
+            </div>
+
+            <div>
+              <label>
+                Numero comprobante
+              </label>
+
+              <input
+                value={
+                  numeroComprobante
+                }
+                onChange={(e) =>
+                  setNumeroComprobante(
+                    e.target.value
+                  )
+                }
+                style={inputStyle}
+                placeholder="00001234"
+              />
+            </div>
+
+            <div>
+              <label>Fecha</label>
+
+              <input
+                type="date"
+                value={fechaCompra}
+                onChange={(e) =>
+                  setFechaCompra(
+                    e.target.value
+                  )
+                }
+                style={inputStyle}
+              />
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginTop: "24px",
+            }}
+          >
+            <div style={sectionHeaderStyle}>
+              <div>
+                <h3>Productos</h3>
+
+                <p>
+                  Cada cantidad se sumara
+                  automaticamente al stock.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="admin-button"
+                onClick={agregarLinea}
+              >
+                + Agregar producto
+              </button>
+            </div>
+
+            {detalles.map(
+              (detalle, index) => {
+                const importe =
+                  (Number(
+                    detalle.cantidad
+                  ) || 0) *
+                  (Number(
+                    detalle.precio_unitario
+                  ) || 0);
+
+                return (
+                  <div
+                    key={detalle.tempId}
+                    style={
+                      purchaseLineStyle
+                    }
+                  >
+                    <div
+                      style={
+                        purchaseLineNumberStyle
+                      }
+                    >
+                      {index + 1}
+                    </div>
+
+                    <div
+                      style={{
+                        flex: 1,
+                        minWidth: "220px",
+                      }}
+                    >
+                      <label>
+                        Producto
+                      </label>
+
+                      <select
+                        required
+                        value={
+                          detalle.producto_id
+                        }
+                        onChange={(e) =>
+                          seleccionarProducto(
+                            detalle.tempId,
+                            e.target.value
+                          )
+                        }
+                        style={inputStyle}
+                      >
+                        <option value="">
+                          Seleccionar
+                        </option>
+
+                        {productos.map(
+                          (producto) => (
+                            <option
+                              key={
+                                producto.id
+                              }
+                              value={
+                                producto.id
+                              }
+                            >
+                              {
+                                producto.nombre
+                              }
+                              {producto.codigo_interno
+                                ? " - " +
+                                  producto.codigo_interno
+                                : ""}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </div>
+
+                    <div
+                      style={{
+                        width: "120px",
+                      }}
+                    >
+                      <label>
+                        Cantidad
+                      </label>
+
+                      <input
+                        required
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={
+                          detalle.cantidad
+                        }
+                        onChange={(e) =>
+                          modificarDetalle(
+                            detalle.tempId,
+                            "cantidad",
+                            e.target.value
+                          )
+                        }
+                        style={inputStyle}
+                      />
+                    </div>
+
+                    <div
+                      style={{
+                        width: "160px",
+                      }}
+                    >
+                      <label>
+                        Costo unitario
+                      </label>
+
+                      <input
+                        required
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={
+                          detalle.precio_unitario
+                        }
+                        onChange={(e) =>
+                          modificarDetalle(
+                            detalle.tempId,
+                            "precio_unitario",
+                            e.target.value
+                          )
+                        }
+                        style={inputStyle}
+                      />
+                    </div>
+
+                    <div
+                      style={{
+                        width: "150px",
+                      }}
+                    >
+                      <label>Subtotal</label>
+
+                      <div
+                        style={
+                          amountBoxStyle
+                        }
+                      >
+                        $
+                        {importe.toLocaleString(
+                          "es-AR",
+                          {
+                            minimumFractionDigits: 2,
+                          }
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      style={
+                        smallDeleteButtonStyle
+                      }
+                      onClick={() =>
+                        eliminarLinea(
+                          detalle.tempId
+                        )
+                      }
+                    >
+                      X
+                    </button>
+                  </div>
+                );
+              }
+            )}
+          </div>
+
+          <div style={totalsBoxStyle}>
+            <div>
+              <label>Descuento</label>
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={descuento}
+                onChange={(e) =>
+                  setDescuento(
+                    e.target.value
+                  )
+                }
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <label>IVA total</label>
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={ivaTotal}
+                onChange={(e) =>
+                  setIvaTotal(
+                    e.target.value
+                  )
+                }
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={summaryStyle}>
+              <span>
+                Subtotal: $
+                {subtotal.toLocaleString(
+                  "es-AR",
+                  {
+                    minimumFractionDigits: 2,
+                  }
+                )}
+              </span>
+
+              <strong>
+                Total: $
+                {totalCompra.toLocaleString(
+                  "es-AR",
+                  {
+                    minimumFractionDigits: 2,
+                  }
+                )}
+              </strong>
+            </div>
+          </div>
+
+          {error && (
+            <div style={errorStyle}>
+              {error}
+            </div>
+          )}
+
+          <div style={buttonRowStyle}>
+            <button
+              type="button"
+              className="admin-button"
+              onClick={onClose}
+              disabled={saving}
+            >
+              Cancelar
+            </button>
+
+            <button
+              type="submit"
+              className="primary-button"
+              disabled={saving}
+            >
+              {saving
+                ? "Guardando compra..."
+                : "Confirmar compra"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function Suppliers() {
   const [proveedores, setProveedores] =
     useState<Proveedor[]>([]);
@@ -1017,10 +2128,10 @@ function Suppliers() {
     useState<string | null>(null);
 
   useEffect(() => {
-    loadSuppliers();
+    cargarProveedores();
   }, []);
 
-  async function loadSuppliers() {
+  async function cargarProveedores() {
     setLoading(true);
     setError("");
 
@@ -1035,25 +2146,51 @@ function Suppliers() {
 
     if (resultado.error) {
       console.error(resultado.error);
-      setError(resultado.error.message);
+
+      setError(
+        resultado.error.message
+      );
+
       setProveedores([]);
     } else {
       setProveedores(
-        (resultado.data || []) as Proveedor[]
+        (resultado.data ||
+          []) as Proveedor[]
       );
     }
 
     setLoading(false);
   }
 
+  const filtrados =
+    proveedores.filter(
+      (proveedor) => {
+        const texto = [
+          proveedor.razon_social,
+          proveedor.nombre_fantasia ||
+            "",
+          proveedor.cuit || "",
+          proveedor.telefono || "",
+          proveedor.email || "",
+        ]
+          .join(" ")
+          .toLowerCase();
+
+        return texto.includes(
+          search.toLowerCase()
+        );
+      }
+    );
+
   async function eliminarProveedor(
     proveedor: Proveedor
   ) {
-    const confirmar = window.confirm(
-      'Seguro que queres eliminar "' +
-        proveedor.razon_social +
-        '"?'
-    );
+    const confirmar =
+      window.confirm(
+        'Seguro que queres eliminar "' +
+          proveedor.razon_social +
+          '"?'
+      );
 
     if (!confirmar) {
       return;
@@ -1067,8 +2204,6 @@ function Suppliers() {
       .eq("id", proveedor.id);
 
     if (resultado.error) {
-      console.error(resultado.error);
-
       window.alert(
         "No se pudo eliminar: " +
           resultado.error.message
@@ -1079,48 +2214,7 @@ function Suppliers() {
     }
 
     setDeletingId(null);
-    await loadSuppliers();
-  }
-
-  const proveedoresFiltrados =
-    proveedores.filter((proveedor) => {
-      const text = [
-        proveedor.razon_social,
-        proveedor.nombre_fantasia || "",
-        proveedor.cuit || "",
-        proveedor.telefono || "",
-        proveedor.email || "",
-        proveedor.direccion || "",
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      return text.includes(
-        search.toLowerCase()
-      );
-    });
-
-  function abrirNuevoProveedor() {
-    setProveedorEditar(null);
-    setShowForm(true);
-  }
-
-  function abrirEditarProveedor(
-    proveedor: Proveedor
-  ) {
-    setProveedorEditar(proveedor);
-    setShowForm(true);
-  }
-
-  function cerrarProveedor() {
-    setShowForm(false);
-    setProveedorEditar(null);
-  }
-
-  async function proveedorGuardado() {
-    setShowForm(false);
-    setProveedorEditar(null);
-    await loadSuppliers();
+    await cargarProveedores();
   }
 
   return (
@@ -1130,13 +2224,17 @@ function Suppliers() {
           <h2>Proveedores</h2>
 
           <p>
-            Administra los proveedores de tu negocio.
+            Administra los proveedores
+            del negocio.
           </p>
         </div>
 
         <button
           className="primary-button"
-          onClick={abrirNuevoProveedor}
+          onClick={() => {
+            setProveedorEditar(null);
+            setShowForm(true);
+          }}
         >
           + Nuevo proveedor
         </button>
@@ -1145,7 +2243,7 @@ function Suppliers() {
       <div className="product-tools">
         <input
           type="search"
-          placeholder="Buscar proveedor, CUIT, telefono o email..."
+          placeholder="Buscar proveedor..."
           value={search}
           onChange={(e) =>
             setSearch(e.target.value)
@@ -1154,7 +2252,7 @@ function Suppliers() {
 
         <button
           className="admin-button"
-          onClick={loadSuppliers}
+          onClick={cargarProveedores}
         >
           Actualizar
         </button>
@@ -1162,65 +2260,44 @@ function Suppliers() {
 
       {loading && (
         <div className="panel">
-          <p>Cargando proveedores...</p>
+          Cargando proveedores...
         </div>
       )}
 
       {!loading && error && (
         <div className="panel">
-          <h3>
-            No se pudieron cargar los proveedores
-          </h3>
-
-          <p>{error}</p>
+          {error}
         </div>
       )}
 
       {!loading &&
-        !error &&
-        proveedores.length === 0 && (
-          <div className="panel">
-            <div className="empty-products">
-              <h3>
-                No hay proveedores cargados
-              </h3>
-
-              <p>
-                Todavia no hay proveedores registrados.
-              </p>
-
-              <button
-                className="primary-button"
-                onClick={abrirNuevoProveedor}
-              >
-                + Cargar primer proveedor
-              </button>
-            </div>
-          </div>
-        )}
-
-      {!loading &&
-        !error &&
-        proveedores.length > 0 && (
+        !error && (
           <div className="panel">
             <div className="table-wrapper">
               <table className="products-table">
                 <thead>
                   <tr>
-                    <th>Razon social</th>
-                    <th>Nombre fantasia</th>
+                    <th>
+                      Razon social
+                    </th>
+                    <th>
+                      Nombre fantasia
+                    </th>
                     <th>CUIT</th>
                     <th>Telefono</th>
                     <th>Email</th>
-                    <th>Direccion</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {proveedoresFiltrados.map(
+                  {filtrados.map(
                     (proveedor) => (
-                      <tr key={proveedor.id}>
+                      <tr
+                        key={
+                          proveedor.id
+                        }
+                      >
                         <td>
                           <strong>
                             {
@@ -1235,19 +2312,18 @@ function Suppliers() {
                         </td>
 
                         <td>
-                          {proveedor.cuit || "-"}
+                          {proveedor.cuit ||
+                            "-"}
                         </td>
 
                         <td>
-                          {proveedor.telefono || "-"}
+                          {proveedor.telefono ||
+                            "-"}
                         </td>
 
                         <td>
-                          {proveedor.email || "-"}
-                        </td>
-
-                        <td>
-                          {proveedor.direccion || "-"}
+                          {proveedor.email ||
+                            "-"}
                         </td>
 
                         <td>
@@ -1257,19 +2333,20 @@ function Suppliers() {
                             }
                           >
                             <button
-                              type="button"
                               className="admin-button"
-                              onClick={() =>
-                                abrirEditarProveedor(
+                              onClick={() => {
+                                setProveedorEditar(
                                   proveedor
-                                )
-                              }
+                                );
+                                setShowForm(
+                                  true
+                                );
+                              }}
                             >
                               Editar
                             </button>
 
                             <button
-                              type="button"
                               style={
                                 deleteButtonStyle
                               }
@@ -1296,11 +2373,11 @@ function Suppliers() {
                 </tbody>
               </table>
 
-              {proveedoresFiltrados.length ===
+              {filtrados.length ===
                 0 && (
                 <div className="table-empty">
-                  No encontramos proveedores con esa
-                  busqueda.
+                  No hay proveedores
+                  para mostrar.
                 </div>
               )}
             </div>
@@ -1309,9 +2386,18 @@ function Suppliers() {
 
       {showForm && (
         <SupplierForm
-          proveedor={proveedorEditar}
-          onClose={cerrarProveedor}
-          onSaved={proveedorGuardado}
+          proveedor={
+            proveedorEditar
+          }
+          onClose={() => {
+            setShowForm(false);
+            setProveedorEditar(null);
+          }}
+          onSaved={async () => {
+            setShowForm(false);
+            setProveedorEditar(null);
+            await cargarProveedores();
+          }}
         />
       )}
     </div>
@@ -1376,63 +2462,38 @@ function SupplierForm({
     setSaving(true);
     setError("");
 
-    const datosProveedor = {
+    const datos = {
       razon_social:
         razonSocial.trim(),
-
       nombre_fantasia:
-        nombreFantasia.trim() || null,
-
-      cuit:
-        cuit.trim() || null,
-
+        nombreFantasia.trim() ||
+        null,
+      cuit: cuit.trim() || null,
       telefono:
         telefono.trim() || null,
-
-      email:
-        email.trim() || null,
-
+      email: email.trim() || null,
       direccion:
         direccion.trim() || null,
     };
 
-    if (proveedor) {
-      const resultado =
-        await supabase
+    const resultado = proveedor
+      ? await supabase
           .from("proveedores")
-          .update(datosProveedor)
-          .eq("id", proveedor.id);
-
-      if (resultado.error) {
-        console.error(
-          resultado.error
-        );
-
-        setError(
-          resultado.error.message
-        );
-
-        setSaving(false);
-        return;
-      }
-    } else {
-      const resultado =
-        await supabase
+          .update(datos)
+          .eq("id", proveedor.id)
+      : await supabase
           .from("proveedores")
-          .insert(datosProveedor);
+          .insert(datos);
 
-      if (resultado.error) {
-        console.error(
-          resultado.error
-        );
+    if (resultado.error) {
+      console.error(resultado.error);
 
-        setError(
-          resultado.error.message
-        );
+      setError(
+        resultado.error.message
+      );
 
-        setSaving(false);
-        return;
-      }
+      setSaving(false);
+      return;
     }
 
     onSaved();
@@ -1450,9 +2511,8 @@ function SupplierForm({
             </h2>
 
             <p>
-              {proveedor
-                ? "Modifica los datos y guarda los cambios."
-                : "Completa los datos del proveedor."}
+              Completa los datos del
+              proveedor.
             </p>
           </div>
 
@@ -1465,8 +2525,14 @@ function SupplierForm({
           </button>
         </div>
 
-        <form onSubmit={guardarProveedor}>
-          <label>Razon social *</label>
+        <form
+          onSubmit={
+            guardarProveedor
+          }
+        >
+          <label>
+            Razon social *
+          </label>
 
           <input
             required
@@ -1479,7 +2545,9 @@ function SupplierForm({
             style={inputStyle}
           />
 
-          <label>Nombre fantasia</label>
+          <label>
+            Nombre fantasia
+          </label>
 
           <input
             value={nombreFantasia}
@@ -1559,8 +2627,6 @@ function SupplierForm({
             >
               {saving
                 ? "Guardando..."
-                : proveedor
-                ? "Guardar cambios"
                 : "Guardar proveedor"}
             </button>
           </div>
@@ -1569,100 +2635,6 @@ function SupplierForm({
     </div>
   );
 }
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  padding: "10px 12px",
-  marginTop: 5,
-  marginBottom: 14,
-  border: "1px solid #d1d5db",
-  borderRadius: 8,
-  boxSizing: "border-box",
-  background: "#ffffff",
-  color: "#111827",
-};
-
-const modalOverlayStyle: CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0, 0, 0, 0.55)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 9999,
-  padding: 20,
-};
-
-const modalStyle: CSSProperties = {
-  background: "#ffffff",
-  color: "#111827",
-  width: "100%",
-  maxWidth: 650,
-  maxHeight: "90vh",
-  overflowY: "auto",
-  borderRadius: 16,
-  padding: 24,
-  boxSizing: "border-box",
-};
-
-const modalHeaderStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 20,
-};
-
-const closeButtonStyle: CSSProperties = {
-  border: "none",
-  background: "transparent",
-  fontSize: 20,
-  cursor: "pointer",
-};
-
-const marginBoxStyle: CSSProperties = {
-  padding: 12,
-  marginBottom: 14,
-  background: "#f3f4f6",
-  borderRadius: 8,
-};
-
-const infoStyle: CSSProperties = {
-  padding: 10,
-  marginBottom: 14,
-  background: "#f3f4f6",
-  borderRadius: 8,
-};
-
-const errorStyle: CSSProperties = {
-  padding: 12,
-  marginTop: 8,
-  marginBottom: 14,
-  borderRadius: 8,
-  background: "#fee2e2",
-  color: "#991b1b",
-};
-
-const buttonRowStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "flex-end",
-  gap: 10,
-  marginTop: 20,
-};
-
-const actionButtonsStyle: CSSProperties = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-};
-
-const deleteButtonStyle: CSSProperties = {
-  border: "1px solid #ef4444",
-  background: "#ffffff",
-  color: "#b91c1c",
-  borderRadius: 8,
-  padding: "8px 10px",
-  cursor: "pointer",
-};
 
 function Stat({
   title,
@@ -1677,7 +2649,7 @@ function Stat({
     <div className="stat-card">
       <span>{title}</span>
       <strong>{value}</strong>
-      <small>{description}</small>
+      <p>{description}</p>
     </div>
   );
 }
@@ -1688,15 +2660,194 @@ function ComingSoon({
   title: string;
 }) {
   return (
-    <div className="panel coming-soon">
+    <div className="panel">
       <h2>{title}</h2>
 
       <p>
-        Este modulo sera incorporado en las proximas
-        fases.
+        Este modulo se agregara en los
+        proximos pasos.
       </p>
     </div>
   );
 }
+
+const modalOverlayStyle: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.65)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "20px",
+  zIndex: 1000,
+};
+
+const modalStyle: CSSProperties = {
+  width: "100%",
+  maxWidth: "680px",
+  maxHeight: "92vh",
+  overflowY: "auto",
+  background: "#ffffff",
+  color: "#111827",
+  borderRadius: "18px",
+  padding: "24px",
+  boxShadow:
+    "0 20px 60px rgba(0,0,0,0.35)",
+};
+
+const modalHeaderStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: "20px",
+  alignItems: "flex-start",
+  marginBottom: "22px",
+};
+
+const closeButtonStyle: CSSProperties = {
+  border: "none",
+  background: "#e5e7eb",
+  borderRadius: "10px",
+  width: "38px",
+  height: "38px",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const inputStyle: CSSProperties = {
+  width: "100%",
+  padding: "11px 12px",
+  border: "1px solid #d1d5db",
+  borderRadius: "9px",
+  marginTop: "6px",
+  marginBottom: "14px",
+  boxSizing: "border-box",
+  background: "#ffffff",
+  color: "#111827",
+};
+
+const buttonRowStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: "10px",
+  marginTop: "20px",
+};
+
+const actionButtonsStyle: CSSProperties = {
+  display: "flex",
+  gap: "8px",
+  flexWrap: "wrap",
+};
+
+const deleteButtonStyle: CSSProperties = {
+  padding: "9px 12px",
+  border: "none",
+  borderRadius: "8px",
+  background: "#fee2e2",
+  color: "#991b1b",
+  cursor: "pointer",
+};
+
+const smallDeleteButtonStyle: CSSProperties = {
+  width: "36px",
+  height: "36px",
+  border: "none",
+  borderRadius: "8px",
+  background: "#fee2e2",
+  color: "#991b1b",
+  cursor: "pointer",
+  marginTop: "24px",
+};
+
+const marginBoxStyle: CSSProperties = {
+  background: "#f0fdf4",
+  border: "1px solid #bbf7d0",
+  borderRadius: "10px",
+  padding: "12px",
+  marginBottom: "14px",
+};
+
+const errorStyle: CSSProperties = {
+  background: "#fef2f2",
+  border: "1px solid #fecaca",
+  color: "#991b1b",
+  padding: "12px",
+  borderRadius: "10px",
+  marginTop: "12px",
+};
+
+const infoStyle: CSSProperties = {
+  background: "#eff6ff",
+  border: "1px solid #bfdbfe",
+  color: "#1e40af",
+  padding: "10px",
+  borderRadius: "10px",
+  marginBottom: "14px",
+};
+
+const formGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns:
+    "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: "12px",
+};
+
+const sectionHeaderStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "15px",
+  marginBottom: "12px",
+};
+
+const purchaseLineStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  flexWrap: "wrap",
+  gap: "10px",
+  padding: "14px",
+  marginBottom: "10px",
+  border: "1px solid #e5e7eb",
+  borderRadius: "12px",
+  background: "#f9fafb",
+};
+
+const purchaseLineNumberStyle: CSSProperties = {
+  width: "32px",
+  height: "32px",
+  borderRadius: "50%",
+  background: "#e5e7eb",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontWeight: 700,
+  marginTop: "24px",
+};
+
+const amountBoxStyle: CSSProperties = {
+  padding: "11px 12px",
+  marginTop: "6px",
+  borderRadius: "9px",
+  background: "#e5e7eb",
+  fontWeight: 700,
+};
+
+const totalsBoxStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns:
+    "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: "15px",
+  padding: "18px",
+  marginTop: "20px",
+  background: "#f9fafb",
+  borderRadius: "12px",
+};
+
+const summaryStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "center",
+  gap: "8px",
+  fontSize: "17px",
+};
 
 export default App;
