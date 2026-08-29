@@ -21,6 +21,24 @@ type Producto = {
   stock_maximo: number | null;
 };
 
+type Categoria = {
+  id: string;
+  nombre: string;
+  activo: boolean | null;
+};
+
+type Marca = {
+  id: string;
+  nombre: string;
+  activo: boolean | null;
+};
+
+type Proveedor = {
+  id: string;
+  razon_social: string;
+  activo: boolean | null;
+};
+
 const menuItems = [
   { name: "Inicio", icon: "I" },
   { name: "Productos", icon: "P" },
@@ -85,6 +103,7 @@ function App() {
 
           <div className="topbar-actions">
             <button className="icon-button">Avisos</button>
+
             <button className="admin-button">
               Administrador
             </button>
@@ -159,8 +178,10 @@ function Products() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
+
   const [productoEditar, setProductoEditar] =
     useState<Producto | null>(null);
+
   const [deletingId, setDeletingId] =
     useState<string | null>(null);
 
@@ -234,6 +255,7 @@ function Products() {
         producto.codigo_barras || "",
         producto.marca || "",
         producto.categoria || "",
+        producto.proveedor || "",
       ]
         .join(" ")
         .toLowerCase();
@@ -546,11 +568,108 @@ function ProductForm({
         : ""
     );
 
+  const [categorias, setCategorias] =
+    useState<Categoria[]>([]);
+
+  const [marcas, setMarcas] =
+    useState<Marca[]>([]);
+
+  const [proveedores, setProveedores] =
+    useState<Proveedor[]>([]);
+
+  const [loadingCatalogos, setLoadingCatalogos] =
+    useState(true);
+
+  const [catalogError, setCatalogError] =
+    useState("");
+
   const [saving, setSaving] =
     useState(false);
 
   const [error, setError] =
     useState("");
+
+  useEffect(() => {
+    cargarCatalogos();
+  }, []);
+
+  async function cargarCatalogos() {
+    setLoadingCatalogos(true);
+    setCatalogError("");
+
+    const [
+      resultadoCategorias,
+      resultadoMarcas,
+      resultadoProveedores,
+    ] = await Promise.all([
+      supabase
+        .from("categorias")
+        .select("id,nombre,activo")
+        .eq("activo", true)
+        .order("nombre", { ascending: true }),
+
+      supabase
+        .from("marcas")
+        .select("id,nombre,activo")
+        .eq("activo", true)
+        .order("nombre", { ascending: true }),
+
+      supabase
+        .from("proveedores")
+        .select("id,razon_social,activo")
+        .eq("activo", true)
+        .order("razon_social", {
+          ascending: true,
+        }),
+    ]);
+
+    if (resultadoCategorias.error) {
+      console.error(
+        resultadoCategorias.error
+      );
+
+      setCatalogError(
+        "No se pudieron cargar las categorias."
+      );
+    } else {
+      setCategorias(
+        (resultadoCategorias.data ||
+          []) as Categoria[]
+      );
+    }
+
+    if (resultadoMarcas.error) {
+      console.error(
+        resultadoMarcas.error
+      );
+
+      setCatalogError(
+        "No se pudieron cargar los catalogos."
+      );
+    } else {
+      setMarcas(
+        (resultadoMarcas.data ||
+          []) as Marca[]
+      );
+    }
+
+    if (resultadoProveedores.error) {
+      console.error(
+        resultadoProveedores.error
+      );
+
+      setCatalogError(
+        "No se pudieron cargar los catalogos."
+      );
+    } else {
+      setProveedores(
+        (resultadoProveedores.data ||
+          []) as Proveedor[]
+      );
+    }
+
+    setLoadingCatalogos(false);
+  }
 
   const costoNumero =
     Number(costo) || 0;
@@ -570,6 +689,25 @@ function ProductForm({
           costoNumero) *
         100
       : 0;
+
+  const categoriaExiste =
+    categoria === "" ||
+    categorias.some(
+      (item) => item.nombre === categoria
+    );
+
+  const marcaExiste =
+    marca === "" ||
+    marcas.some(
+      (item) => item.nombre === marca
+    );
+
+  const proveedorExiste =
+    proveedor === "" ||
+    proveedores.some(
+      (item) =>
+        item.razon_social === proveedor
+    );
 
   async function guardarProducto(
     e: FormEvent<HTMLFormElement>
@@ -596,13 +734,13 @@ function ProductForm({
         codigoBarras.trim() || null,
 
       categoria:
-        categoria.trim() || null,
+        categoria || null,
 
       marca:
-        marca.trim() || null,
+        marca || null,
 
       proveedor:
-        proveedor.trim() || null,
+        proveedor || null,
 
       costo_actual:
         costo !== ""
@@ -757,7 +895,7 @@ function ProductForm({
 
           <label>Categoria</label>
 
-          <input
+          <select
             value={categoria}
             onChange={(e) =>
               setCategoria(
@@ -765,11 +903,34 @@ function ProductForm({
               )
             }
             style={inputStyle}
-          />
+            disabled={loadingCatalogos}
+          >
+            <option value="">
+              Seleccionar categoria
+            </option>
+
+            {!categoriaExiste &&
+              categoria && (
+                <option value={categoria}>
+                  {categoria}
+                </option>
+              )}
+
+            {categorias.map(
+              (item) => (
+                <option
+                  key={item.id}
+                  value={item.nombre}
+                >
+                  {item.nombre}
+                </option>
+              )
+            )}
+          </select>
 
           <label>Marca</label>
 
-          <input
+          <select
             value={marca}
             onChange={(e) =>
               setMarca(
@@ -777,11 +938,34 @@ function ProductForm({
               )
             }
             style={inputStyle}
-          />
+            disabled={loadingCatalogos}
+          >
+            <option value="">
+              Seleccionar marca
+            </option>
+
+            {!marcaExiste &&
+              marca && (
+                <option value={marca}>
+                  {marca}
+                </option>
+              )}
+
+            {marcas.map(
+              (item) => (
+                <option
+                  key={item.id}
+                  value={item.nombre}
+                >
+                  {item.nombre}
+                </option>
+              )
+            )}
+          </select>
 
           <label>Proveedor</label>
 
-          <input
+          <select
             value={proveedor}
             onChange={(e) =>
               setProveedor(
@@ -789,7 +973,45 @@ function ProductForm({
               )
             }
             style={inputStyle}
-          />
+            disabled={loadingCatalogos}
+          >
+            <option value="">
+              Seleccionar proveedor
+            </option>
+
+            {!proveedorExiste &&
+              proveedor && (
+                <option value={proveedor}>
+                  {proveedor}
+                </option>
+              )}
+
+            {proveedores.map(
+              (item) => (
+                <option
+                  key={item.id}
+                  value={
+                    item.razon_social
+                  }
+                >
+                  {item.razon_social}
+                </option>
+              )
+            )}
+          </select>
+
+          {loadingCatalogos && (
+            <div style={infoStyle}>
+              Cargando categorias, marcas y
+              proveedores...
+            </div>
+          )}
+
+          {catalogError && (
+            <div style={errorStyle}>
+              {catalogError}
+            </div>
+          )}
 
           <label>Costo actual</label>
 
@@ -924,6 +1146,8 @@ const inputStyle: CSSProperties = {
   border: "1px solid #d1d5db",
   borderRadius: 8,
   boxSizing: "border-box",
+  background: "#ffffff",
+  color: "#111827",
 };
 
 const modalOverlayStyle: CSSProperties = {
@@ -970,9 +1194,17 @@ const marginBoxStyle: CSSProperties = {
   borderRadius: 8,
 };
 
+const infoStyle: CSSProperties = {
+  padding: 10,
+  marginBottom: 14,
+  background: "#f3f4f6",
+  borderRadius: 8,
+};
+
 const errorStyle: CSSProperties = {
   padding: 12,
   marginTop: 8,
+  marginBottom: 14,
   borderRadius: 8,
   background: "#fee2e2",
   color: "#991b1b",
