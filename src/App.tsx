@@ -60,7 +60,8 @@ type Compra = {
   descuento: number | null;
   iva_total: number | null;
   estado: string | null;
-  documento_origen: string | null;
+  documento: string | null;
+  origen: string | null;
 };
 
 type DetalleCompraForm = {
@@ -210,24 +211,13 @@ function Dashboard() {
 }
 
 function Products() {
-  const [productos, setProductos] =
-    useState<Producto[]>([]);
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [error, setError] =
-    useState("");
-
-  const [search, setSearch] =
-    useState("");
-
-  const [showForm, setShowForm] =
-    useState(false);
-
+  const [productos, setProductos] = useState<Producto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [showForm, setShowForm] = useState(false);
   const [productoEditar, setProductoEditar] =
     useState<Producto | null>(null);
-
   const [deletingId, setDeletingId] =
     useState<string | null>(null);
 
@@ -242,35 +232,27 @@ function Products() {
     const resultado = await supabase
       .from("productos")
       .select("*")
-      .order("nombre", {
-        ascending: true,
-      });
+      .order("nombre", { ascending: true });
 
     if (resultado.error) {
       console.error(resultado.error);
       setError(resultado.error.message);
       setProductos([]);
     } else {
-      setProductos(
-        (resultado.data || []) as Producto[]
-      );
+      setProductos((resultado.data || []) as Producto[]);
     }
 
     setLoading(false);
   }
 
-  async function eliminarProducto(
-    producto: Producto
-  ) {
+  async function eliminarProducto(producto: Producto) {
     const confirmar = window.confirm(
       'Seguro que queres eliminar "' +
         producto.nombre +
         '"?'
     );
 
-    if (!confirmar) {
-      return;
-    }
+    if (!confirmar) return;
 
     setDeletingId(producto.id);
 
@@ -281,12 +263,9 @@ function Products() {
 
     if (resultado.error) {
       console.error(resultado.error);
-
       window.alert(
-        "No se pudo eliminar: " +
-          resultado.error.message
+        "No se pudo eliminar: " + resultado.error.message
       );
-
       setDeletingId(null);
       return;
     }
@@ -295,40 +274,29 @@ function Products() {
     await loadProducts();
   }
 
-  const filteredProducts = productos.filter(
-    (producto) => {
-      const text = [
-        producto.nombre,
-        producto.codigo_interno || "",
-        producto.codigo_barras || "",
-        producto.marca || "",
-        producto.categoria || "",
-        producto.proveedor || "",
-      ]
-        .join(" ")
-        .toLowerCase();
+  const filteredProducts = productos.filter((producto) => {
+    const text = [
+      producto.nombre,
+      producto.codigo_interno || "",
+      producto.codigo_barras || "",
+      producto.marca || "",
+      producto.categoria || "",
+      producto.proveedor || "",
+    ]
+      .join(" ")
+      .toLowerCase();
 
-      return text.includes(
-        search.toLowerCase()
-      );
-    }
-  );
+    return text.includes(search.toLowerCase());
+  });
 
   function abrirNuevoProducto() {
     setProductoEditar(null);
     setShowForm(true);
   }
 
-  function abrirEditarProducto(
-    producto: Producto
-  ) {
+  function abrirEditarProducto(producto: Producto) {
     setProductoEditar(producto);
     setShowForm(true);
-  }
-
-  function cerrarFormulario() {
-    setShowForm(false);
-    setProductoEditar(null);
   }
 
   async function productoGuardado() {
@@ -360,9 +328,7 @@ function Products() {
           type="search"
           placeholder="Buscar producto, codigo o codigo de barras..."
           value={search}
-          onChange={(e) =>
-            setSearch(e.target.value)
-          }
+          onChange={(e) => setSearch(e.target.value)}
         />
 
         <button
@@ -386,143 +352,118 @@ function Products() {
         </div>
       )}
 
-      {!loading &&
-        !error &&
-        productos.length === 0 && (
-          <div className="panel">
-            <div className="empty-products">
-              <h3>No hay productos cargados</h3>
+      {!loading && !error && productos.length === 0 && (
+        <div className="panel">
+          <div className="empty-products">
+            <h3>No hay productos cargados</h3>
+            <p>Todavia no hay productos registrados.</p>
 
-              <p>
-                Todavia no hay productos registrados.
-              </p>
-
-              <button
-                className="primary-button"
-                onClick={abrirNuevoProducto}
-              >
-                + Cargar primer producto
-              </button>
-            </div>
+            <button
+              className="primary-button"
+              onClick={abrirNuevoProducto}
+            >
+              + Cargar primer producto
+            </button>
           </div>
-        )}
+        </div>
+      )}
 
-      {!loading &&
-        !error &&
-        productos.length > 0 && (
-          <div className="panel">
-            <div className="table-wrapper">
-              <table className="products-table">
-                <thead>
-                  <tr>
-                    <th>Producto</th>
-                    <th>Codigo</th>
-                    <th>Codigo de barras</th>
-                    <th>Costo</th>
-                    <th>Precio venta</th>
-                    <th>Stock</th>
-                    <th>Acciones</th>
+      {!loading && !error && productos.length > 0 && (
+        <div className="panel">
+          <div className="table-wrapper">
+            <table className="products-table">
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Codigo</th>
+                  <th>Codigo de barras</th>
+                  <th>Costo</th>
+                  <th>Precio venta</th>
+                  <th>Stock</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {filteredProducts.map((producto) => (
+                  <tr key={producto.id}>
+                    <td>
+                      <strong>{producto.nombre}</strong>
+                      {producto.marca && (
+                        <small>{producto.marca}</small>
+                      )}
+                    </td>
+
+                    <td>{producto.codigo_interno || "-"}</td>
+                    <td>{producto.codigo_barras || "-"}</td>
+
+                    <td>
+                      $
+                      {Number(
+                        producto.costo_actual || 0
+                      ).toLocaleString("es-AR", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </td>
+
+                    <td>
+                      $
+                      {Number(
+                        producto.precio_venta || 0
+                      ).toLocaleString("es-AR", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </td>
+
+                    <td>{producto.stock_actual || 0}</td>
+
+                    <td>
+                      <div style={actionButtonsStyle}>
+                        <button
+                          type="button"
+                          className="admin-button"
+                          onClick={() =>
+                            abrirEditarProducto(producto)
+                          }
+                        >
+                          Editar
+                        </button>
+
+                        <button
+                          type="button"
+                          style={deleteButtonStyle}
+                          disabled={deletingId === producto.id}
+                          onClick={() =>
+                            eliminarProducto(producto)
+                          }
+                        >
+                          {deletingId === producto.id
+                            ? "Eliminando..."
+                            : "Eliminar"}
+                        </button>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
+                ))}
+              </tbody>
+            </table>
 
-                <tbody>
-                  {filteredProducts.map(
-                    (producto) => (
-                      <tr key={producto.id}>
-                        <td>
-                          <strong>
-                            {producto.nombre}
-                          </strong>
-
-                          {producto.marca && (
-                            <small>
-                              {producto.marca}
-                            </small>
-                          )}
-                        </td>
-
-                        <td>
-                          {producto.codigo_interno || "-"}
-                        </td>
-
-                        <td>
-                          {producto.codigo_barras || "-"}
-                        </td>
-
-                        <td>
-                          $
-                          {Number(
-                            producto.costo_actual || 0
-                          ).toLocaleString("es-AR", {
-                            minimumFractionDigits: 2,
-                          })}
-                        </td>
-
-                        <td>
-                          $
-                          {Number(
-                            producto.precio_venta || 0
-                          ).toLocaleString("es-AR", {
-                            minimumFractionDigits: 2,
-                          })}
-                        </td>
-
-                        <td>
-                          {producto.stock_actual || 0}
-                        </td>
-
-                        <td>
-                          <div style={actionButtonsStyle}>
-                            <button
-                              type="button"
-                              className="admin-button"
-                              onClick={() =>
-                                abrirEditarProducto(
-                                  producto
-                                )
-                              }
-                            >
-                              Editar
-                            </button>
-
-                            <button
-                              type="button"
-                              style={deleteButtonStyle}
-                              disabled={
-                                deletingId ===
-                                producto.id
-                              }
-                              onClick={() =>
-                                eliminarProducto(
-                                  producto
-                                )
-                              }
-                            >
-                              {deletingId === producto.id
-                                ? "Eliminando..."
-                                : "Eliminar"}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  )}
-                </tbody>
-              </table>
-
-              {filteredProducts.length === 0 && (
-                <div className="table-empty">
-                  No encontramos productos con esa busqueda.
-                </div>
-              )}
-            </div>
+            {filteredProducts.length === 0 && (
+              <div className="table-empty">
+                No encontramos productos con esa busqueda.
+              </div>
+            )}
           </div>
-        )}
+        </div>
+      )}
 
       {showForm && (
         <ProductForm
           producto={productoEditar}
-          onClose={cerrarFormulario}
+          onClose={() => {
+            setShowForm(false);
+            setProductoEditar(null);
+          }}
           onSaved={productoGuardado}
         />
       )}
@@ -538,70 +479,54 @@ function ProductForm({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [nombre, setNombre] =
-    useState(producto?.nombre || "");
-
+  const [nombre, setNombre] = useState(producto?.nombre || "");
   const [codigoInterno, setCodigoInterno] =
     useState(producto?.codigo_interno || "");
-
   const [codigoBarras, setCodigoBarras] =
     useState(producto?.codigo_barras || "");
-
   const [categoria, setCategoria] =
     useState(producto?.categoria || "");
-
   const [marca, setMarca] =
     useState(producto?.marca || "");
-
   const [proveedor, setProveedor] =
     useState(producto?.proveedor || "");
 
-  const [costo, setCosto] =
-    useState(
-      producto?.costo_actual != null
-        ? String(producto.costo_actual)
-        : ""
-    );
+  const [costo, setCosto] = useState(
+    producto?.costo_actual != null
+      ? String(producto.costo_actual)
+      : ""
+  );
 
-  const [precio, setPrecio] =
-    useState(
-      producto?.precio_venta != null
-        ? String(producto.precio_venta)
-        : ""
-    );
+  const [precio, setPrecio] = useState(
+    producto?.precio_venta != null
+      ? String(producto.precio_venta)
+      : ""
+  );
 
-  const [stock, setStock] =
-    useState(
-      producto?.stock_actual != null
-        ? String(producto.stock_actual)
-        : ""
-    );
+  const [stock, setStock] = useState(
+    producto?.stock_actual != null
+      ? String(producto.stock_actual)
+      : ""
+  );
 
-  const [stockMinimo, setStockMinimo] =
-    useState(
-      producto?.stock_minimo != null
-        ? String(producto.stock_minimo)
-        : ""
-    );
+  const [stockMinimo, setStockMinimo] = useState(
+    producto?.stock_minimo != null
+      ? String(producto.stock_minimo)
+      : ""
+  );
 
   const [categorias, setCategorias] =
     useState<Categoria[]>([]);
-
   const [marcas, setMarcas] =
     useState<Marca[]>([]);
-
   const [proveedores, setProveedores] =
     useState<ProveedorCatalogo[]>([]);
-
   const [loadingCatalogos, setLoadingCatalogos] =
     useState(true);
-
   const [catalogError, setCatalogError] =
     useState("");
-
   const [saving, setSaving] =
     useState(false);
-
   const [error, setError] =
     useState("");
 
@@ -638,8 +563,6 @@ function ProductForm({
     ]);
 
     if (resultadoCategorias.error) {
-      console.error(resultadoCategorias.error);
-
       setCatalogError(
         "No se pudieron cargar las categorias."
       );
@@ -650,8 +573,6 @@ function ProductForm({
     }
 
     if (resultadoMarcas.error) {
-      console.error(resultadoMarcas.error);
-
       setCatalogError(
         "No se pudieron cargar las marcas."
       );
@@ -662,15 +583,12 @@ function ProductForm({
     }
 
     if (resultadoProveedores.error) {
-      console.error(resultadoProveedores.error);
-
       setCatalogError(
         "No se pudieron cargar los proveedores."
       );
     } else {
       setProveedores(
-        (resultadoProveedores.data ||
-          []) as ProveedorCatalogo[]
+        (resultadoProveedores.data || []) as ProveedorCatalogo[]
       );
     }
 
@@ -690,33 +608,13 @@ function ProductForm({
       ? (margenGanancia / costoNumero) * 100
       : 0;
 
-  const categoriaExiste =
-    categoria === "" ||
-    categorias.some(
-      (item) => item.nombre === categoria
-    );
-
-  const marcaExiste =
-    marca === "" ||
-    marcas.some(
-      (item) => item.nombre === marca
-    );
-
-  const proveedorExiste =
-    proveedor === "" ||
-    proveedores.some(
-      (item) => item.razon_social === proveedor
-    );
-
   async function guardarProducto(
     e: FormEvent<HTMLFormElement>
   ) {
     e.preventDefault();
 
     if (!nombre.trim()) {
-      setError(
-        "El nombre del producto es obligatorio."
-      );
+      setError("El nombre del producto es obligatorio.");
       return;
     }
 
@@ -725,70 +623,45 @@ function ProductForm({
 
     const datosProducto = {
       nombre: nombre.trim(),
-
-      codigo_interno:
-        codigoInterno.trim() || null,
-
-      codigo_barras:
-        codigoBarras.trim() || null,
-
+      codigo_interno: codigoInterno.trim() || null,
+      codigo_barras: codigoBarras.trim() || null,
       categoria: categoria || null,
-
       marca: marca || null,
-
       proveedor: proveedor || null,
-
-      costo_actual:
-        costo !== "" ? Number(costo) : null,
-
+      costo_actual: costo !== "" ? Number(costo) : null,
       costo_ultima_compra:
         costo !== "" ? Number(costo) : null,
-
       precio_venta:
         precio !== "" ? Number(precio) : null,
-
       margen_ganancia:
         costo !== "" && precio !== ""
           ? margenGanancia
           : null,
-
       margen_porcentaje:
         costo !== "" && precio !== ""
           ? margenPorcentaje
           : null,
-
       stock_actual:
         stock !== "" ? Number(stock) : 0,
-
       stock_minimo:
         stockMinimo !== ""
           ? Number(stockMinimo)
           : 0,
     };
 
-    if (producto) {
-      const resultado = await supabase
-        .from("productos")
-        .update(datosProducto)
-        .eq("id", producto.id);
+    const resultado = producto
+      ? await supabase
+          .from("productos")
+          .update(datosProducto)
+          .eq("id", producto.id)
+      : await supabase
+          .from("productos")
+          .insert(datosProducto);
 
-      if (resultado.error) {
-        console.error(resultado.error);
-        setError(resultado.error.message);
-        setSaving(false);
-        return;
-      }
-    } else {
-      const resultado = await supabase
-        .from("productos")
-        .insert(datosProducto);
-
-      if (resultado.error) {
-        console.error(resultado.error);
-        setError(resultado.error.message);
-        setSaving(false);
-        return;
-      }
+    if (resultado.error) {
+      setError(resultado.error.message);
+      setSaving(false);
+      return;
     }
 
     onSaved();
@@ -804,12 +677,6 @@ function ProductForm({
                 ? "Editar producto"
                 : "Nuevo producto"}
             </h2>
-
-            <p>
-              {producto
-                ? "Modifica los datos y guarda los cambios."
-                : "Completa los datos del producto."}
-            </p>
           </div>
 
           <button
@@ -823,7 +690,6 @@ function ProductForm({
 
         <form onSubmit={guardarProducto}>
           <label>Nombre *</label>
-
           <input
             required
             value={nombre}
@@ -834,7 +700,6 @@ function ProductForm({
           />
 
           <label>Codigo interno</label>
-
           <input
             value={codigoInterno}
             onChange={(e) =>
@@ -844,7 +709,6 @@ function ProductForm({
           />
 
           <label>Codigo de barras</label>
-
           <input
             value={codigoBarras}
             onChange={(e) =>
@@ -854,7 +718,6 @@ function ProductForm({
           />
 
           <label>Categoria</label>
-
           <select
             value={categoria}
             onChange={(e) =>
@@ -867,12 +730,6 @@ function ProductForm({
               Seleccionar categoria
             </option>
 
-            {!categoriaExiste && categoria && (
-              <option value={categoria}>
-                {categoria}
-              </option>
-            )}
-
             {categorias.map((item) => (
               <option
                 key={item.id}
@@ -884,7 +741,6 @@ function ProductForm({
           </select>
 
           <label>Marca</label>
-
           <select
             value={marca}
             onChange={(e) =>
@@ -897,12 +753,6 @@ function ProductForm({
               Seleccionar marca
             </option>
 
-            {!marcaExiste && marca && (
-              <option value={marca}>
-                {marca}
-              </option>
-            )}
-
             {marcas.map((item) => (
               <option
                 key={item.id}
@@ -914,7 +764,6 @@ function ProductForm({
           </select>
 
           <label>Proveedor</label>
-
           <select
             value={proveedor}
             onChange={(e) =>
@@ -927,12 +776,6 @@ function ProductForm({
               Seleccionar proveedor
             </option>
 
-            {!proveedorExiste && proveedor && (
-              <option value={proveedor}>
-                {proveedor}
-              </option>
-            )}
-
             {proveedores.map((item) => (
               <option
                 key={item.id}
@@ -943,12 +786,6 @@ function ProductForm({
             ))}
           </select>
 
-          {loadingCatalogos && (
-            <div style={infoStyle}>
-              Cargando catalogos...
-            </div>
-          )}
-
           {catalogError && (
             <div style={errorStyle}>
               {catalogError}
@@ -956,7 +793,6 @@ function ProductForm({
           )}
 
           <label>Costo actual</label>
-
           <input
             type="number"
             step="0.01"
@@ -969,7 +805,6 @@ function ProductForm({
           />
 
           <label>Precio de venta</label>
-
           <input
             type="number"
             step="0.01"
@@ -1003,7 +838,6 @@ function ProductForm({
             )}
 
           <label>Stock actual</label>
-
           <input
             type="number"
             step="0.01"
@@ -1016,7 +850,6 @@ function ProductForm({
           />
 
           <label>Stock minimo</label>
-
           <input
             type="number"
             step="0.01"
@@ -1051,8 +884,6 @@ function ProductForm({
             >
               {saving
                 ? "Guardando..."
-                : producto
-                ? "Guardar cambios"
                 : "Guardar producto"}
             </button>
           </div>
@@ -1065,19 +896,14 @@ function ProductForm({
 function Purchases() {
   const [compras, setCompras] =
     useState<Compra[]>([]);
-
   const [proveedores, setProveedores] =
     useState<ProveedorCatalogo[]>([]);
-
   const [productos, setProductos] =
     useState<Producto[]>([]);
-
   const [loading, setLoading] =
     useState(true);
-
   const [error, setError] =
     useState("");
-
   const [showForm, setShowForm] =
     useState(false);
 
@@ -1097,7 +923,7 @@ function Purchases() {
       supabase
         .from("compras")
         .select(
-          "id,proveedor_id,tipo_comprobante,punto_venta,numero_comprobante,fecha_compra,subtotal,descuento,iva_total,estado,documento_origen"
+          "id,proveedor_id,tipo_comprobante,punto_venta,numero_comprobante,fecha_compra,subtotal,descuento,iva_total,estado,documento,origen"
         )
         .order("fecha_compra", {
           ascending: false,
@@ -1120,7 +946,6 @@ function Purchases() {
     ]);
 
     if (resultadoCompras.error) {
-      console.error(resultadoCompras.error);
       setError(resultadoCompras.error.message);
       setCompras([]);
     } else {
@@ -1131,8 +956,7 @@ function Purchases() {
 
     if (!resultadoProveedores.error) {
       setProveedores(
-        (resultadoProveedores.data ||
-          []) as ProveedorCatalogo[]
+        (resultadoProveedores.data || []) as ProveedorCatalogo[]
       );
     }
 
@@ -1146,9 +970,7 @@ function Purchases() {
   }
 
   function nombreProveedor(id: string | null) {
-    if (!id) {
-      return "-";
-    }
+    if (!id) return "-";
 
     const proveedor = proveedores.find(
       (item) => item.id === id
@@ -1167,7 +989,6 @@ function Purchases() {
       <div className="page-header">
         <div>
           <h2>Compras</h2>
-
           <p>
             Registra compras y actualiza stock y costos.
           </p>
@@ -1218,11 +1039,6 @@ function Purchases() {
           <div className="panel">
             <div className="empty-products">
               <h3>No hay compras cargadas</h3>
-
-              <p>
-                Podes cargar una compra manualmente o,
-                proximamente, escanear una factura con IA.
-              </p>
 
               <button
                 className="primary-button"
@@ -1329,39 +1145,23 @@ function PurchaseForm({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [proveedorId, setProveedorId] =
-    useState("");
-
+  const [proveedorId, setProveedorId] = useState("");
   const [tipoComprobante, setTipoComprobante] =
-    useState("Factura");
-
-  const [puntoVenta, setPuntoVenta] =
-    useState("");
-
+    useState("Factura C");
+  const [puntoVenta, setPuntoVenta] = useState("");
   const [numeroComprobante, setNumeroComprobante] =
     useState("");
-
-  const [fechaCompra, setFechaCompra] =
-    useState(
-      new Date().toISOString().slice(0, 10)
-    );
-
-  const [descuento, setDescuento] =
-    useState("0");
-
-  const [ivaTotal, setIvaTotal] =
-    useState("0");
-
+  const [fechaCompra, setFechaCompra] = useState(
+    new Date().toISOString().slice(0, 10)
+  );
+  const [descuento, setDescuento] = useState("0");
+  const [ivaTotal, setIvaTotal] = useState("0");
   const [detalles, setDetalles] =
     useState<DetalleCompraForm[]>([
       crearDetalleVacio(),
     ]);
-
-  const [saving, setSaving] =
-    useState(false);
-
-  const [error, setError] =
-    useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   function crearDetalleVacio(): DetalleCompraForm {
     return {
@@ -1383,9 +1183,7 @@ function PurchaseForm({
   }
 
   function eliminarLinea(tempId: string) {
-    if (detalles.length === 1) {
-      return;
-    }
+    if (detalles.length === 1) return;
 
     setDetalles((actual) =>
       actual.filter(
@@ -1443,7 +1241,6 @@ function PurchaseForm({
     (total, item) => {
       const cantidad =
         Number(item.cantidad) || 0;
-
       const precio =
         Number(item.precio_unitario) || 0;
 
@@ -1468,9 +1265,7 @@ function PurchaseForm({
     setError("");
 
     if (!proveedorId) {
-      setError(
-        "Selecciona un proveedor."
-      );
+      setError("Selecciona un proveedor.");
       return;
     }
 
@@ -1519,7 +1314,10 @@ function PurchaseForm({
           descuento: descuentoNumero,
           iva_total: ivaNumero,
           estado: "confirmada",
-          documento_origen: "manual",
+
+          documento: null,
+
+          origen: "manual",
         })
         .select("id")
         .single();
@@ -1653,7 +1451,7 @@ function PurchaseForm({
         );
 
         setError(
-          "La compra se guardo, pero no se pudo actualizar el stock de todos los productos: " +
+          "La compra se guardo, pero no se pudo actualizar el stock: " +
             resultadoProducto.error.message
         );
 
@@ -1741,10 +1539,6 @@ function PurchaseForm({
                 }
                 style={inputStyle}
               >
-                <option value="Factura">
-                  Factura
-                </option>
-
                 <option value="Factura A">
                   Factura A
                 </option>
@@ -1827,8 +1621,8 @@ function PurchaseForm({
                 <h3>Productos</h3>
 
                 <p>
-                  Cada cantidad se sumara
-                  automaticamente al stock.
+                  La cantidad comprada
+                  se sumara al stock.
                 </p>
               </div>
 
@@ -2106,24 +1900,18 @@ function PurchaseForm({
 function Suppliers() {
   const [proveedores, setProveedores] =
     useState<Proveedor[]>([]);
-
   const [loading, setLoading] =
     useState(true);
-
   const [error, setError] =
     useState("");
-
   const [search, setSearch] =
     useState("");
-
   const [showForm, setShowForm] =
     useState(false);
-
   const [
     proveedorEditar,
     setProveedorEditar,
   ] = useState<Proveedor | null>(null);
-
   const [deletingId, setDeletingId] =
     useState<string | null>(null);
 
@@ -2145,17 +1933,13 @@ function Suppliers() {
       });
 
     if (resultado.error) {
-      console.error(resultado.error);
-
       setError(
         resultado.error.message
       );
-
       setProveedores([]);
     } else {
       setProveedores(
-        (resultado.data ||
-          []) as Proveedor[]
+        (resultado.data || []) as Proveedor[]
       );
     }
 
@@ -2167,8 +1951,7 @@ function Suppliers() {
       (proveedor) => {
         const texto = [
           proveedor.razon_social,
-          proveedor.nombre_fantasia ||
-            "",
+          proveedor.nombre_fantasia || "",
           proveedor.cuit || "",
           proveedor.telefono || "",
           proveedor.email || "",
@@ -2192,9 +1975,7 @@ function Suppliers() {
           '"?'
       );
 
-    if (!confirmar) {
-      return;
-    }
+    if (!confirmar) return;
 
     setDeletingId(proveedor.id);
 
@@ -2270,125 +2051,106 @@ function Suppliers() {
         </div>
       )}
 
-      {!loading &&
-        !error && (
-          <div className="panel">
-            <div className="table-wrapper">
-              <table className="products-table">
-                <thead>
-                  <tr>
-                    <th>
-                      Razon social
-                    </th>
-                    <th>
-                      Nombre fantasia
-                    </th>
-                    <th>CUIT</th>
-                    <th>Telefono</th>
-                    <th>Email</th>
-                    <th>Acciones</th>
-                  </tr>
-                </thead>
+      {!loading && !error && (
+        <div className="panel">
+          <div className="table-wrapper">
+            <table className="products-table">
+              <thead>
+                <tr>
+                  <th>Razon social</th>
+                  <th>Nombre fantasia</th>
+                  <th>CUIT</th>
+                  <th>Telefono</th>
+                  <th>Email</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
 
-                <tbody>
-                  {filtrados.map(
-                    (proveedor) => (
-                      <tr
-                        key={
-                          proveedor.id
-                        }
-                      >
-                        <td>
-                          <strong>
-                            {
-                              proveedor.razon_social
-                            }
-                          </strong>
-                        </td>
+              <tbody>
+                {filtrados.map(
+                  (proveedor) => (
+                    <tr
+                      key={proveedor.id}
+                    >
+                      <td>
+                        <strong>
+                          {
+                            proveedor.razon_social
+                          }
+                        </strong>
+                      </td>
 
-                        <td>
-                          {proveedor.nombre_fantasia ||
-                            "-"}
-                        </td>
+                      <td>
+                        {proveedor.nombre_fantasia ||
+                          "-"}
+                      </td>
 
-                        <td>
-                          {proveedor.cuit ||
-                            "-"}
-                        </td>
+                      <td>
+                        {proveedor.cuit ||
+                          "-"}
+                      </td>
 
-                        <td>
-                          {proveedor.telefono ||
-                            "-"}
-                        </td>
+                      <td>
+                        {proveedor.telefono ||
+                          "-"}
+                      </td>
 
-                        <td>
-                          {proveedor.email ||
-                            "-"}
-                        </td>
+                      <td>
+                        {proveedor.email ||
+                          "-"}
+                      </td>
 
-                        <td>
-                          <div
+                      <td>
+                        <div
+                          style={
+                            actionButtonsStyle
+                          }
+                        >
+                          <button
+                            className="admin-button"
+                            onClick={() => {
+                              setProveedorEditar(
+                                proveedor
+                              );
+                              setShowForm(true);
+                            }}
+                          >
+                            Editar
+                          </button>
+
+                          <button
                             style={
-                              actionButtonsStyle
+                              deleteButtonStyle
+                            }
+                            disabled={
+                              deletingId ===
+                              proveedor.id
+                            }
+                            onClick={() =>
+                              eliminarProveedor(
+                                proveedor
+                              )
                             }
                           >
-                            <button
-                              className="admin-button"
-                              onClick={() => {
-                                setProveedorEditar(
-                                  proveedor
-                                );
-                                setShowForm(
-                                  true
-                                );
-                              }}
-                            >
-                              Editar
-                            </button>
-
-                            <button
-                              style={
-                                deleteButtonStyle
-                              }
-                              disabled={
-                                deletingId ===
-                                proveedor.id
-                              }
-                              onClick={() =>
-                                eliminarProveedor(
-                                  proveedor
-                                )
-                              }
-                            >
-                              {deletingId ===
-                              proveedor.id
-                                ? "Eliminando..."
-                                : "Eliminar"}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  )}
-                </tbody>
-              </table>
-
-              {filtrados.length ===
-                0 && (
-                <div className="table-empty">
-                  No hay proveedores
-                  para mostrar.
-                </div>
-              )}
-            </div>
+                            {deletingId ===
+                            proveedor.id
+                              ? "Eliminando..."
+                              : "Eliminar"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                )}
+              </tbody>
+            </table>
           </div>
-        )}
+        </div>
+      )}
 
       {showForm && (
         <SupplierForm
-          proveedor={
-            proveedorEditar
-          }
+          proveedor={proveedorEditar}
           onClose={() => {
             setShowForm(false);
             setProveedorEditar(null);
@@ -2466,8 +2228,7 @@ function SupplierForm({
       razon_social:
         razonSocial.trim(),
       nombre_fantasia:
-        nombreFantasia.trim() ||
-        null,
+        nombreFantasia.trim() || null,
       cuit: cuit.trim() || null,
       telefono:
         telefono.trim() || null,
@@ -2486,12 +2247,9 @@ function SupplierForm({
           .insert(datos);
 
     if (resultado.error) {
-      console.error(resultado.error);
-
       setError(
         resultado.error.message
       );
-
       setSaving(false);
       return;
     }
@@ -2509,11 +2267,6 @@ function SupplierForm({
                 ? "Editar proveedor"
                 : "Nuevo proveedor"}
             </h2>
-
-            <p>
-              Completa los datos del
-              proveedor.
-            </p>
           </div>
 
           <button
@@ -2525,14 +2278,8 @@ function SupplierForm({
           </button>
         </div>
 
-        <form
-          onSubmit={
-            guardarProveedor
-          }
-        >
-          <label>
-            Razon social *
-          </label>
+        <form onSubmit={guardarProveedor}>
+          <label>Razon social *</label>
 
           <input
             required
@@ -2545,9 +2292,7 @@ function SupplierForm({
             style={inputStyle}
           />
 
-          <label>
-            Nombre fantasia
-          </label>
+          <label>Nombre fantasia</label>
 
           <input
             value={nombreFantasia}
@@ -2773,15 +2518,6 @@ const errorStyle: CSSProperties = {
   padding: "12px",
   borderRadius: "10px",
   marginTop: "12px",
-};
-
-const infoStyle: CSSProperties = {
-  background: "#eff6ff",
-  border: "1px solid #bfdbfe",
-  color: "#1e40af",
-  padding: "10px",
-  borderRadius: "10px",
-  marginBottom: "14px",
 };
 
 const formGridStyle: CSSProperties = {
