@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { CSSProperties, FormEvent } from "react";
 import { supabase } from "./supabase";
 
 type Producto = {
@@ -21,14 +22,14 @@ type Producto = {
 };
 
 const menuItems = [
-  { name: "Inicio", icon: "⌂" },
-  { name: "Productos", icon: "▣" },
-  { name: "Ventas", icon: "▤" },
-  { name: "Compras", icon: "🛒" },
-  { name: "Clientes", icon: "♙" },
-  { name: "Proveedores", icon: "♧" },
-  { name: "Stock", icon: "▦" },
-  { name: "Informes", icon: "▥" },
+  { name: "Inicio", icon: "I" },
+  { name: "Productos", icon: "P" },
+  { name: "Ventas", icon: "V" },
+  { name: "Compras", icon: "C" },
+  { name: "Clientes", icon: "CL" },
+  { name: "Proveedores", icon: "PR" },
+  { name: "Stock", icon: "S" },
+  { name: "Informes", icon: "IN" },
 ];
 
 function App() {
@@ -42,7 +43,7 @@ function App() {
 
           <div>
             <strong>COMERCIAL</strong>
-            <span>Gestión Comercial</span>
+            <span>Gestion Comercial</span>
           </div>
         </div>
 
@@ -79,11 +80,11 @@ function App() {
         <header className="topbar">
           <div>
             <h1>{active}</h1>
-            <p>Gestión Comercial</p>
+            <p>Gestion Comercial</p>
           </div>
 
           <div className="topbar-actions">
-            <button className="icon-button">🔔</button>
+            <button className="icon-button">Avisos</button>
             <button className="admin-button">
               Administrador
             </button>
@@ -113,7 +114,7 @@ function Dashboard() {
           <h2>Bienvenido a Comercial</h2>
 
           <p>
-            Desde aquí podés administrar toda la gestión
+            Desde aqui podes administrar toda la gestion
             de tu negocio.
           </p>
         </div>
@@ -125,7 +126,7 @@ function Dashboard() {
 
       <div className="stats">
         <Stat
-          title="Ventas del día"
+          title="Ventas del dia"
           value="$ 0"
           description="Sin ventas registradas"
         />
@@ -133,7 +134,7 @@ function Dashboard() {
         <Stat
           title="Productos"
           value="0"
-          description="Catálogo de productos"
+          description="Catalogo de productos"
         />
 
         <Stat
@@ -171,25 +172,31 @@ function Products() {
     setLoading(true);
     setError("");
 
-    const { data, error } = await supabase
+    const resultado = await supabase
       .from("productos")
       .select("*")
       .order("nombre", { ascending: true });
 
-    if (error) {
-      console.error(error);
-      setError(error.message);
+    if (resultado.error) {
+      console.error(resultado.error);
+      setError(resultado.error.message);
       setProductos([]);
     } else {
-      setProductos((data || []) as Producto[]);
+      setProductos(
+        (resultado.data || []) as Producto[]
+      );
     }
 
     setLoading(false);
   }
 
-  async function eliminarProducto(producto: Producto) {
+  async function eliminarProducto(
+    producto: Producto
+  ) {
     const confirmar = window.confirm(
-      ¿Seguro que querés eliminar "${producto.nombre}"?
+      'Seguro que queres eliminar "' +
+        producto.nombre +
+        '"?'
     );
 
     if (!confirmar) {
@@ -198,20 +205,25 @@ function Products() {
 
     setDeletingId(producto.id);
 
-    const { error } = await supabase
+    const resultado = await supabase
       .from("productos")
       .delete()
       .eq("id", producto.id);
 
-    if (error) {
-      console.error(error);
-      alert(No se pudo eliminar: ${error.message});
+    if (resultado.error) {
+      console.error(resultado.error);
+
+      window.alert(
+        "No se pudo eliminar: " +
+          resultado.error.message
+      );
+
       setDeletingId(null);
       return;
     }
 
     setDeletingId(null);
-    loadProducts();
+    await loadProducts();
   }
 
   const filteredProducts = productos.filter(
@@ -230,6 +242,29 @@ function Products() {
     }
   );
 
+  function abrirNuevoProducto() {
+    setProductoEditar(null);
+    setShowForm(true);
+  }
+
+  function abrirEditarProducto(
+    producto: Producto
+  ) {
+    setProductoEditar(producto);
+    setShowForm(true);
+  }
+
+  function cerrarFormulario() {
+    setShowForm(false);
+    setProductoEditar(null);
+  }
+
+  async function productoGuardado() {
+    setShowForm(false);
+    setProductoEditar(null);
+    await loadProducts();
+  }
+
   return (
     <div className="products-page">
       <div className="page-header">
@@ -237,16 +272,14 @@ function Products() {
           <h2>Productos</h2>
 
           <p>
-            Administrá productos, códigos, precios y stock.
+            Administra productos, codigos, precios y
+            stock.
           </p>
         </div>
 
         <button
           className="primary-button"
-          onClick={() => {
-            setProductoEditar(null);
-            setShowForm(true);
-          }}
+          onClick={abrirNuevoProducto}
         >
           + Nuevo producto
         </button>
@@ -255,16 +288,18 @@ function Products() {
       <div className="product-tools">
         <input
           type="search"
-          placeholder="Buscar producto, código o código de barras..."
+          placeholder="Buscar producto, codigo o codigo de barras..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) =>
+            setSearch(e.target.value)
+          }
         />
 
         <button
           className="admin-button"
           onClick={loadProducts}
         >
-          ↻ Actualizar
+          Actualizar
         </button>
       </div>
 
@@ -276,7 +311,10 @@ function Products() {
 
       {!loading && error && (
         <div className="panel">
-          <h3>No se pudieron cargar los productos</h3>
+          <h3>
+            No se pudieron cargar los productos
+          </h3>
+
           <p>{error}</p>
         </div>
       )}
@@ -286,23 +324,17 @@ function Products() {
         productos.length === 0 && (
           <div className="panel">
             <div className="empty-products">
-              <div className="empty-icon large">
-                📦
-              </div>
-
               <h3>No hay productos cargados</h3>
 
               <p>
-                La conexión funciona correctamente, pero
-                todavía no hay productos registrados.
+                La conexion funciona correctamente,
+                pero todavia no hay productos
+                registrados.
               </p>
 
               <button
                 className="primary-button"
-                onClick={() => {
-                  setProductoEditar(null);
-                  setShowForm(true);
-                }}
+                onClick={abrirNuevoProducto}
               >
                 + Cargar primer producto
               </button>
@@ -319,8 +351,8 @@ function Products() {
                 <thead>
                   <tr>
                     <th>Producto</th>
-                    <th>Código</th>
-                    <th>Código de barras</th>
+                    <th>Codigo</th>
+                    <th>Codigo de barras</th>
                     <th>Costo</th>
                     <th>Precio venta</th>
                     <th>Stock</th>
@@ -345,29 +377,39 @@ function Products() {
                         </td>
 
                         <td>
-                          {producto.codigo_interno || "-"}
+                          {producto.codigo_interno ||
+                            "-"}
                         </td>
 
                         <td>
-                          {producto.codigo_barras || "-"}
-                        </td>
-
-                        <td>
-                          $
-                          {Number(
-                            producto.costo_actual || 0
-                          ).toLocaleString("es-AR", {
-                            minimumFractionDigits: 2,
-                          })}
+                          {producto.codigo_barras ||
+                            "-"}
                         </td>
 
                         <td>
                           $
                           {Number(
-                            producto.precio_venta || 0
-                          ).toLocaleString("es-AR", {
-                            minimumFractionDigits: 2,
-                          })}
+                            producto.costo_actual ||
+                              0
+                          ).toLocaleString(
+                            "es-AR",
+                            {
+                              minimumFractionDigits: 2,
+                            }
+                          )}
+                        </td>
+
+                        <td>
+                          $
+                          {Number(
+                            producto.precio_venta ||
+                              0
+                          ).toLocaleString(
+                            "es-AR",
+                            {
+                              minimumFractionDigits: 2,
+                            }
+                          )}
                         </td>
 
                         <td>
@@ -375,30 +417,42 @@ function Products() {
                         </td>
 
                         <td>
-                          <div style={actionButtonsStyle}>
+                          <div
+                            style={
+                              actionButtonsStyle
+                            }
+                          >
                             <button
+                              type="button"
                               className="admin-button"
-                              onClick={() => {
-                                setProductoEditar(producto);
-                                setShowForm(true);
-                              }}
+                              onClick={() =>
+                                abrirEditarProducto(
+                                  producto
+                                )
+                              }
                             >
-                              ✏️ Editar
+                              Editar
                             </button>
 
                             <button
                               type="button"
-                              onClick={() =>
-                                eliminarProducto(producto)
+                              style={
+                                deleteButtonStyle
                               }
                               disabled={
-                                deletingId === producto.id
+                                deletingId ===
+                                producto.id
                               }
-                              style={deleteButtonStyle}
+                              onClick={() =>
+                                eliminarProducto(
+                                  producto
+                                )
+                              }
                             >
-                              {deletingId === producto.id
+                              {deletingId ===
+                              producto.id
                                 ? "Eliminando..."
-                                : "🗑️ Eliminar"}
+                                : "Eliminar"}
                             </button>
                           </div>
                         </td>
@@ -408,10 +462,11 @@ function Products() {
                 </tbody>
               </table>
 
-              {filteredProducts.length === 0 && (
+              {filteredProducts.length ===
+                0 && (
                 <div className="table-empty">
                   No encontramos productos con esa
-                  búsqueda.
+                  busqueda.
                 </div>
               )}
             </div>
@@ -421,15 +476,8 @@ function Products() {
       {showForm && (
         <ProductForm
           producto={productoEditar}
-          onClose={() => {
-            setShowForm(false);
-            setProductoEditar(null);
-          }}
-          onSaved={() => {
-            setShowForm(false);
-            setProductoEditar(null);
-            loadProducts();
-          }}
+          onClose={cerrarFormulario}
+          onSaved={productoGuardado}
         />
       )}
     </div>
@@ -450,58 +498,81 @@ function ProductForm({
   );
 
   const [codigoInterno, setCodigoInterno] =
-    useState(producto?.codigo_interno || "");
+    useState(
+      producto?.codigo_interno || ""
+    );
 
   const [codigoBarras, setCodigoBarras] =
-    useState(producto?.codigo_barras || "");
+    useState(
+      producto?.codigo_barras || ""
+    );
 
-  const [categoria, setCategoria] = useState(
-    producto?.categoria || ""
-  );
+  const [categoria, setCategoria] =
+    useState(
+      producto?.categoria || ""
+    );
 
   const [marca, setMarca] = useState(
     producto?.marca || ""
   );
 
-  const [proveedor, setProveedor] = useState(
-    producto?.proveedor || ""
-  );
+  const [proveedor, setProveedor] =
+    useState(
+      producto?.proveedor || ""
+    );
 
   const [costo, setCosto] = useState(
-    producto?.costo_actual?.toString() || ""
+    producto?.costo_actual != null
+      ? String(producto.costo_actual)
+      : ""
   );
 
   const [precio, setPrecio] = useState(
-    producto?.precio_venta?.toString() || ""
+    producto?.precio_venta != null
+      ? String(producto.precio_venta)
+      : ""
   );
 
   const [stock, setStock] = useState(
-    producto?.stock_actual?.toString() || ""
+    producto?.stock_actual != null
+      ? String(producto.stock_actual)
+      : ""
   );
 
   const [stockMinimo, setStockMinimo] =
     useState(
-      producto?.stock_minimo?.toString() || ""
+      producto?.stock_minimo != null
+        ? String(producto.stock_minimo)
+        : ""
     );
 
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [saving, setSaving] =
+    useState(false);
 
-  const costoNumero = Number(costo) || 0;
-  const precioNumero = Number(precio) || 0;
+  const [error, setError] =
+    useState("");
+
+  const costoNumero =
+    Number(costo) || 0;
+
+  const precioNumero =
+    Number(precio) || 0;
 
   const margenGanancia =
-    precioNumero > 0 && costoNumero > 0
+    precioNumero > 0 &&
+    costoNumero > 0
       ? precioNumero - costoNumero
       : 0;
 
   const margenPorcentaje =
     costoNumero > 0
-      ? (margenGanancia / costoNumero) * 100
+      ? (margenGanancia /
+          costoNumero) *
+        100
       : 0;
 
   async function guardarProducto(
-    e: React.FormEvent<HTMLFormElement>
+    e: FormEvent<HTMLFormElement>
   ) {
     e.preventDefault();
 
@@ -534,51 +605,80 @@ function ProductForm({
         proveedor.trim() || null,
 
       costo_actual:
-        costo ? Number(costo) : null,
+        costo !== ""
+          ? Number(costo)
+          : null,
 
       costo_ultima_compra:
-        costo ? Number(costo) : null,
+        costo !== ""
+          ? Number(costo)
+          : null,
 
       precio_venta:
-        precio ? Number(precio) : null,
+        precio !== ""
+          ? Number(precio)
+          : null,
 
       margen_ganancia:
-        costo && precio
+        costo !== "" &&
+        precio !== ""
           ? margenGanancia
           : null,
 
       margen_porcentaje:
-        costo && precio
+        costo !== "" &&
+        precio !== ""
           ? margenPorcentaje
           : null,
 
       stock_actual:
-        stock ? Number(stock) : 0,
+        stock !== ""
+          ? Number(stock)
+          : 0,
 
       stock_minimo:
-        stockMinimo
+        stockMinimo !== ""
           ? Number(stockMinimo)
           : 0,
     };
 
-    let resultado;
-
     if (producto) {
-      resultado = await supabase
-        .from("productos")
-        .update(datosProducto)
-        .eq("id", producto.id);
-    } else {
-      resultado = await supabase
-        .from("productos")
-        .insert(datosProducto);
-    }
+      const resultado =
+        await supabase
+          .from("productos")
+          .update(datosProducto)
+          .eq("id", producto.id);
 
-    if (resultado.error) {
-      console.error(resultado.error);
-      setError(resultado.error.message);
-      setSaving(false);
-      return;
+      if (resultado.error) {
+        console.error(
+          resultado.error
+        );
+
+        setError(
+          resultado.error.message
+        );
+
+        setSaving(false);
+        return;
+      }
+    } else {
+      const resultado =
+        await supabase
+          .from("productos")
+          .insert(datosProducto);
+
+      if (resultado.error) {
+        console.error(
+          resultado.error
+        );
+
+        setError(
+          resultado.error.message
+        );
+
+        setSaving(false);
+        return;
+      }
     }
 
     onSaved();
@@ -589,16 +689,16 @@ function ProductForm({
       <div style={modalStyle}>
         <div style={modalHeaderStyle}>
           <div>
-            <h2 style={{ marginBottom: 4 }}>
+            <h2>
               {producto
                 ? "Editar producto"
                 : "Nuevo producto"}
             </h2>
 
-            <p style={{ marginTop: 0 }}>
+            <p>
               {producto
-                ? "Modificá los datos y guardá los cambios."
-                : "Completá los datos del producto."}
+                ? "Modifica los datos y guarda los cambios."
+                : "Completa los datos del producto."}
             </p>
           </div>
 
@@ -607,48 +707,62 @@ function ProductForm({
             onClick={onClose}
             style={closeButtonStyle}
           >
-            ✕
+            X
           </button>
         </div>
 
-        <form onSubmit={guardarProducto}>
+        <form
+          onSubmit={guardarProducto}
+        >
           <label>Nombre *</label>
 
           <input
             required
             value={nombre}
             onChange={(e) =>
-              setNombre(e.target.value)
+              setNombre(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
 
-          <label>Código interno</label>
+          <label>
+            Codigo interno
+          </label>
 
           <input
             value={codigoInterno}
             onChange={(e) =>
-              setCodigoInterno(e.target.value)
+              setCodigoInterno(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
 
-          <label>Código de barras</label>
+          <label>
+            Codigo de barras
+          </label>
 
           <input
             value={codigoBarras}
             onChange={(e) =>
-              setCodigoBarras(e.target.value)
+              setCodigoBarras(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
 
-          <label>Categoría</label>
+          <label>Categoria</label>
 
           <input
             value={categoria}
             onChange={(e) =>
-              setCategoria(e.target.value)
+              setCategoria(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
@@ -658,7 +772,9 @@ function ProductForm({
           <input
             value={marca}
             onChange={(e) =>
-              setMarca(e.target.value)
+              setMarca(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
@@ -668,7 +784,9 @@ function ProductForm({
           <input
             value={proveedor}
             onChange={(e) =>
-              setProveedor(e.target.value)
+              setProveedor(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
@@ -681,12 +799,16 @@ function ProductForm({
             min="0"
             value={costo}
             onChange={(e) =>
-              setCosto(e.target.value)
+              setCosto(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
 
-          <label>Precio de venta</label>
+          <label>
+            Precio de venta
+          </label>
 
           <input
             type="number"
@@ -694,14 +816,20 @@ function ProductForm({
             min="0"
             value={precio}
             onChange={(e) =>
-              setPrecio(e.target.value)
+              setPrecio(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
 
           {costoNumero > 0 &&
             precioNumero > 0 && (
-              <div style={marginBoxStyle}>
+              <div
+                style={
+                  marginBoxStyle
+                }
+              >
                 <strong>
                   Margen: $
                   {margenGanancia.toLocaleString(
@@ -713,10 +841,11 @@ function ProductForm({
                 </strong>
 
                 <span>
-                  {" "}
-                  (
-                  {margenPorcentaje.toFixed(2)}
-                  %)
+                  {" ("}
+                  {margenPorcentaje.toFixed(
+                    2
+                  )}
+                  {"%)"}
                 </span>
               </div>
             )}
@@ -729,12 +858,14 @@ function ProductForm({
             min="0"
             value={stock}
             onChange={(e) =>
-              setStock(e.target.value)
+              setStock(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
 
-          <label>Stock mínimo</label>
+          <label>Stock minimo</label>
 
           <input
             type="number"
@@ -742,7 +873,9 @@ function ProductForm({
             min="0"
             value={stockMinimo}
             onChange={(e) =>
-              setStockMinimo(e.target.value)
+              setStockMinimo(
+                e.target.value
+              )
             }
             style={inputStyle}
           />
@@ -753,7 +886,9 @@ function ProductForm({
             </div>
           )}
 
-          <div style={buttonRowStyle}>
+          <div
+            style={buttonRowStyle}
+          >
             <button
               type="button"
               className="admin-button"
@@ -781,7 +916,7 @@ function ProductForm({
   );
 }
 
-const inputStyle: React.CSSProperties = {
+const inputStyle: CSSProperties = {
   width: "100%",
   padding: "10px 12px",
   marginTop: 5,
@@ -791,7 +926,7 @@ const inputStyle: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
-const modalOverlayStyle: React.CSSProperties = {
+const modalOverlayStyle: CSSProperties = {
   position: "fixed",
   inset: 0,
   background: "rgba(0, 0, 0, 0.55)",
@@ -802,7 +937,7 @@ const modalOverlayStyle: React.CSSProperties = {
   padding: 20,
 };
 
-const modalStyle: React.CSSProperties = {
+const modalStyle: CSSProperties = {
   background: "#ffffff",
   color: "#111827",
   width: "100%",
@@ -814,28 +949,28 @@ const modalStyle: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
-const modalHeaderStyle: React.CSSProperties = {
+const modalHeaderStyle: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
   gap: 20,
 };
 
-const closeButtonStyle: React.CSSProperties = {
+const closeButtonStyle: CSSProperties = {
   border: "none",
   background: "transparent",
-  fontSize: 22,
+  fontSize: 20,
   cursor: "pointer",
 };
 
-const marginBoxStyle: React.CSSProperties = {
+const marginBoxStyle: CSSProperties = {
   padding: 12,
   marginBottom: 14,
   background: "#f3f4f6",
   borderRadius: 8,
 };
 
-const errorStyle: React.CSSProperties = {
+const errorStyle: CSSProperties = {
   padding: 12,
   marginTop: 8,
   borderRadius: 8,
@@ -843,4 +978,61 @@ const errorStyle: React.CSSProperties = {
   color: "#991b1b",
 };
 
-const buttonRowStyle: React.CSSPrope
+const buttonRowStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: 10,
+  marginTop: 20,
+};
+
+const actionButtonsStyle: CSSProperties = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+};
+
+const deleteButtonStyle: CSSProperties = {
+  border: "1px solid #ef4444",
+  background: "#ffffff",
+  color: "#b91c1c",
+  borderRadius: 8,
+  padding: "8px 10px",
+  cursor: "pointer",
+};
+
+function Stat({
+  title,
+  value,
+  description,
+}: {
+  title: string;
+  value: string;
+  description: string;
+}) {
+  return (
+    <div className="stat-card">
+      <span>{title}</span>
+      <strong>{value}</strong>
+      <small>{description}</small>
+    </div>
+  );
+}
+
+function ComingSoon({
+  title,
+}: {
+  title: string;
+}) {
+  return (
+    <div className="panel coming-soon">
+      <h2>{title}</h2>
+
+      <p>
+        Este modulo sera incorporado en las proximas
+        fases.
+      </p>
+    </div>
+  );
+}
+
+export default App;
