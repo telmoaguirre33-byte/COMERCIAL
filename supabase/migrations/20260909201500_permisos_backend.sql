@@ -32,6 +32,15 @@ as $$
   ]::text[]);
 $$;
 
+create or replace function public.permisos_sigo_validos(p_permisos text[])
+returns boolean
+language sql
+immutable
+as $$
+  select coalesce(bool_and(public.permiso_sigo_valido(p)), true)
+  from unnest(coalesce(p_permisos, '{}'::text[])) as p;
+$$;
+
 -- Los permisos extra solo aceptan claves conocidas. NOT VALID evita bloquear
 -- la migración si existiera algún dato histórico inválido; sí protege altas y
 -- modificaciones nuevas hasta poder validar todo el histórico.
@@ -45,13 +54,7 @@ begin
   ) then
     alter table public.empresa_usuarios
       add constraint empresa_usuarios_permisos_extra_validos
-      check (
-        coalesce(
-          (select bool_and(public.permiso_sigo_valido(p))
-           from unnest(permisos_extra) as p),
-          true
-        )
-      ) not valid;
+      check (public.permisos_sigo_validos(permisos_extra)) not valid;
   end if;
 end $$;
 
@@ -116,9 +119,11 @@ as $$
 $$;
 
 revoke all on function public.permiso_sigo_valido(text) from public;
+revoke all on function public.permisos_sigo_validos(text[]) from public;
 revoke all on function public.tiene_permiso_empresa(uuid, text) from public;
 
 grant execute on function public.permiso_sigo_valido(text) to authenticated;
+grant execute on function public.permisos_sigo_validos(text[]) to authenticated;
 grant execute on function public.tiene_permiso_empresa(uuid, text) to authenticated;
 
 comment on function public.tiene_permiso_empresa(uuid, text) is
