@@ -54,6 +54,7 @@ const rolePermissions: Record<SigoRole, ReadonlySet<SigoPermission>> = {
     "client_portal.read",
   ]),
   owner: new Set<SigoPermission>([
+    "companies.manage",
     "users.manage",
     "products.read",
     "products.write",
@@ -112,14 +113,19 @@ const rolePermissions: Record<SigoRole, ReadonlySet<SigoPermission>> = {
 };
 
 /**
- * Permisos base por rol. Los permisos extra deben venir de la membresia
- * empresa/usuario almacenada en backend y nunca reemplazan las RLS de Supabase.
+ * Permisos efectivos en frontend.
+ * La denegacion explicita siempre prevalece sobre el rol y sobre permisos extra.
+ * Esto es defensa en profundidad: la autorizacion real debe seguir aplicandose
+ * en backend/RLS y nunca depender solamente de esta funcion.
  */
 export function can(
   role: SigoRole,
   permission: SigoPermission,
-  extraPermissions: readonly SigoPermission[] = []
+  extraPermissions: readonly SigoPermission[] = [],
+  deniedPermissions: readonly SigoPermission[] = []
 ): boolean {
+  if (deniedPermissions.includes(permission)) return false;
+
   return (
     rolePermissions[role].has(permission) ||
     extraPermissions.includes(permission)
@@ -128,11 +134,12 @@ export function can(
 
 export function canSeeSensitiveCommercialData(
   role: SigoRole,
-  extraPermissions: readonly SigoPermission[] = []
+  extraPermissions: readonly SigoPermission[] = [],
+  deniedPermissions: readonly SigoPermission[] = []
 ): boolean {
   return (
-    can(role, "costs.read", extraPermissions) ||
-    can(role, "margins.read", extraPermissions) ||
-    can(role, "price_lists.read", extraPermissions)
+    can(role, "costs.read", extraPermissions, deniedPermissions) ||
+    can(role, "margins.read", extraPermissions, deniedPermissions) ||
+    can(role, "price_lists.read", extraPermissions, deniedPermissions)
   );
 }
