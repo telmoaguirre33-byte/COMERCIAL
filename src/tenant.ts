@@ -11,6 +11,7 @@ export type RolEmpresaSigo =
 export type EmpresaOperativa = {
   empresa_id: string;
   nombre: string;
+  empresa_nombre: string;
   razon_social: string | null;
   rol: RolEmpresaSigo;
 };
@@ -24,7 +25,10 @@ export async function cargarMisEmpresas(): Promise<EmpresaOperativa[]> {
     throw error;
   }
 
-  return (data ?? []) as EmpresaOperativa[];
+  return ((data ?? []) as Array<Omit<EmpresaOperativa, "empresa_nombre">>).map((empresa) => ({
+    ...empresa,
+    empresa_nombre: empresa.nombre || empresa.razon_social || "Empresa",
+  }));
 }
 
 export function leerEmpresaActivaGuardada(): string | null {
