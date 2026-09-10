@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import {
   cargarMisEmpresas,
   guardarEmpresaActiva,
@@ -119,7 +120,7 @@ export default function TenantSwitcher({ value, onChange, disabled = false }: Pr
   );
 }
 
-const shellStyle: React.CSSProperties = {
+const shellStyle: CSSProperties = {
   display: "grid",
   gap: 4,
   minWidth: 220,
@@ -130,7 +131,7 @@ const shellStyle: React.CSSProperties = {
   boxShadow: "0 8px 24px rgba(15, 23, 42, .06)",
 };
 
-const eyebrowStyle: React.CSSProperties = {
+const eyebrowStyle: CSSProperties = {
   fontSize: 11,
   fontWeight: 700,
   letterSpacing: ".08em",
@@ -138,7 +139,7 @@ const eyebrowStyle: React.CSSProperties = {
   opacity: 0.58,
 };
 
-const selectStyle: React.CSSProperties = {
+const selectStyle: CSSProperties = {
   width: "100%",
   border: 0,
   outline: 0,
