@@ -84,3 +84,16 @@ export async function guardarProductoSigo(input: GuardarProductoSigoInput): Prom
   if (!data) throw new Error("PRODUCT_SAVE_FAILED");
   return data as string;
 }
+
+export async function eliminarProductoSigo(empresaId: string, productoId: string): Promise<void> {
+  if (!empresaId) throw new Error("EMPRESA_REQUIRED");
+  if (!productoId) throw new Error("PRODUCT_REQUIRED");
+
+  const { data, error } = await supabase.rpc("eliminar_producto_sigo", {
+    p_empresa_id: empresaId,
+    p_producto_id: productoId,
+  });
+
+  if (error) throw error;
+  if (data !== true) throw new Error("PRODUCT_DELETE_FAILED");
+}
