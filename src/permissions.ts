@@ -31,28 +31,12 @@ export type SigoPermission =
   | "client_portal.read";
 
 const rolePermissions: Record<SigoRole, ReadonlySet<SigoPermission>> = {
+  // El superadmin administra la plataforma, empresas y usuarios, pero NO recibe
+  // acceso operativo implícito a los datos de cada tenant. Para operar dentro
+  // de una empresa debe tener una membresía/permiso explícito de esa empresa.
   superadmin: new Set<SigoPermission>([
     "companies.manage",
     "users.manage",
-    "products.read",
-    "products.write",
-    "stock.read",
-    "stock.write",
-    "sales.read",
-    "sales.write",
-    "purchases.read",
-    "purchases.write",
-    "clients.read",
-    "clients.write",
-    "suppliers.read",
-    "suppliers.write",
-    "reports.read",
-    "costs.read",
-    "margins.read",
-    "price_lists.read",
-    "arca.configure",
-    "invoices.issue",
-    "client_portal.read",
   ]),
   owner: new Set<SigoPermission>([
     "companies.manage",
