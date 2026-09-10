@@ -1,10 +1,18 @@
 import { supabase } from "./supabase";
 
+export type RolEmpresaSigo =
+  | "owner"
+  | "admin"
+  | "administrative"
+  | "seller"
+  | "warehouse"
+  | "client";
+
 export type EmpresaOperativa = {
   empresa_id: string;
   nombre: string;
   razon_social: string | null;
-  rol: "owner" | "admin" | "seller" | "warehouse" | "client";
+  rol: RolEmpresaSigo;
 };
 
 const ACTIVE_COMPANY_KEY = "sigo.activeEmpresaId";
