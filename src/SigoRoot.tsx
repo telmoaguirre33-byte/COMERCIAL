@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import App from "./App";
+import SigoApp from "./SigoApp";
 import TenantSwitcher from "./TenantSwitcher";
 import type { EmpresaOperativa } from "./tenant";
 
@@ -27,7 +27,7 @@ export default function SigoRoot() {
           Preparando empresa activa…
         </div>
       ) : empresaActiva ? (
-        <App key={empresaActiva.empresa_id} />
+        <SigoApp key={empresaActiva.empresa_id} empresa={empresaActiva} />
       ) : (
         <main className="sigo-tenant-state" role="alert">
           <h1>SIGO necesita una empresa activa</h1>
