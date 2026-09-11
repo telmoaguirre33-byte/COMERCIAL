@@ -30,8 +30,6 @@ function normalizarRol(valor: unknown): RolEmpresaSigo {
   if (typeof valor === "string" && ROLES_VALIDOS.has(valor as RolEmpresaSigo)) {
     return valor as RolEmpresaSigo;
   }
-  // Fallar cerrado: un rol desconocido nunca debe transformarse implícitamente
-  // en un perfil con permisos dentro de una empresa.
   throw new Error("TENANT_ROLE_INVALID");
 }
 
@@ -61,6 +59,44 @@ function rpcNoDisponible(error: { code?: string; message?: string } | null): boo
   );
 }
 
+function errorBackendNoPreparado(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  const mensaje = (error.message ?? "").toLowerCase();
+  return (
+    error.code === "PGRST202" ||
+    error.code === "42P01" ||
+    error.code === "42883" ||
+    mensaje.includes("does not exist") ||
+    mensaje.includes("not found") ||
+    mensaje.includes("schema cache")
+  );
+}
+
+function errorTransitorio(error: { code?: string; message?: string; status?: number } | null): boolean {
+  if (!error) return false;
+  const mensaje = (error.message ?? "").toLowerCase();
+  return (
+    error.status === 502 ||
+    error.status === 503 ||
+    error.status === 504 ||
+    mensaje.includes("network") ||
+    mensaje.includes("fetch") ||
+    mensaje.includes("timeout") ||
+    mensaje.includes("temporarily unavailable")
+  );
+}
+
+function esperar(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function diagnosticarBackendTenant(): Promise<void> {
+  const { error } = await supabase.rpc("sigo_access_healthcheck");
+  if (!error) return;
+  if (errorBackendNoPreparado(error)) throw new Error("TENANT_BACKEND_MIGRATION_PENDING");
+  throw error;
+}
+
 async function cargarEmpresasPorMembresia(): Promise<EmpresaOperativa[]> {
   const {
     data: { user },
@@ -77,7 +113,10 @@ async function cargarEmpresasPorMembresia(): Promise<EmpresaOperativa[]> {
     .eq("activo", true)
     .eq("empresas.activa", true);
 
-  if (error) throw error;
+  if (error) {
+    if (errorBackendNoPreparado(error)) throw new Error("TENANT_BACKEND_MIGRATION_PENDING");
+    throw error;
+  }
 
   const normalizadas = (data ?? []).flatMap((fila: any) => {
     const empresa = Array.isArray(fila.empresas) ? fila.empresas[0] : fila.empresas;
@@ -96,7 +135,7 @@ async function cargarEmpresasPorMembresia(): Promise<EmpresaOperativa[]> {
   return deduplicarEmpresas(normalizadas);
 }
 
-export async function cargarMisEmpresas(): Promise<EmpresaOperativa[]> {
+async function cargarMisEmpresasUnaVez(): Promise<EmpresaOperativa[]> {
   const { data, error } = await supabase.rpc("mis_empresas_sigo");
 
   if (!error) {
@@ -111,13 +150,35 @@ export async function cargarMisEmpresas(): Promise<EmpresaOperativa[]> {
     return deduplicarEmpresas(normalizadas);
   }
 
-  // Compatibilidad de despliegue solamente cuando la RPC realmente no existe.
-  // Un error de permisos, autenticación o red debe fallar cerrado y hacerse visible;
-  // no se enmascara usando otra ruta de acceso a datos.
   if (!rpcNoDisponible(error)) throw error;
 
-  console.warn("mis_empresas_sigo no disponible; usando fallback RLS", error);
-  return cargarEmpresasPorMembresia();
+  console.warn("mis_empresas_sigo no disponible; verificando fallback RLS", error);
+  try {
+    return await cargarEmpresasPorMembresia();
+  } catch (fallbackError) {
+    if (fallbackError instanceof Error && fallbackError.message === "TENANT_BACKEND_MIGRATION_PENDING") {
+      try {
+        await diagnosticarBackendTenant();
+      } catch (diagnosticError) {
+        throw diagnosticError;
+      }
+    }
+    throw fallbackError;
+  }
+}
+
+export async function cargarMisEmpresas(): Promise<EmpresaOperativa[]> {
+  try {
+    return await cargarMisEmpresasUnaVez();
+  } catch (error) {
+    const compatible = error as { code?: string; message?: string; status?: number } | null;
+    if (!errorTransitorio(compatible)) throw error;
+
+    // Un único reintento corto evita que una falla de red momentánea deje al usuario
+    // bloqueado en la pantalla de acceso. Nunca se reintentan errores de permisos/esquema.
+    await esperar(650);
+    return cargarMisEmpresasUnaVez();
+  }
 }
 
 export async function crearEmpresaSigo(nombre: string): Promise<string> {
@@ -130,7 +191,10 @@ export async function crearEmpresaSigo(nombre: string): Promise<string> {
     p_cuit: null,
   });
 
-  if (error) throw error;
+  if (error) {
+    if (errorBackendNoPreparado(error)) throw new Error("TENANT_BACKEND_MIGRATION_PENDING");
+    throw error;
+  }
   return data as string;
 }
 
