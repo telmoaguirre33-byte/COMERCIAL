@@ -27,6 +27,9 @@ const ACTIONS: Array<{ value: BarcodeAction; label: string }> = [
   { value: "editar", label: "Buscar / editar producto" },
 ];
 
+const SCANNER_GAP_MS = 90;
+const DUPLICATE_GUARD_MS = 750;
+
 export default function BarcodeScanner({
   empresaId,
   action,
@@ -37,23 +40,42 @@ export default function BarcodeScanner({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [cameraOpen, setCameraOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanningRef = useRef(false);
+  const inFlightRef = useRef(false);
+  const wedgeBufferRef = useRef("");
+  const wedgeLastKeyAtRef = useRef(0);
+  const lastResolvedRef = useRef<{ code: string; at: number } | null>(null);
 
   const detectorCtor = useMemo(() => {
     const w = window as typeof window & { BarcodeDetector?: BarcodeDetectorCtor };
     return w.BarcodeDetector;
   }, []);
 
+  function focusScanner() {
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
   async function resolveCode(raw: string) {
     const normalized = normalizeBarcode(raw);
-    if (!normalized || busy) return;
+    if (!normalized || inFlightRef.current) return;
     if (!empresaId) {
       setError("Seleccioná una empresa antes de escanear.");
+      focusScanner();
       return;
     }
 
+    const now = Date.now();
+    const previous = lastResolvedRef.current;
+    if (previous && previous.code === normalized && now - previous.at < DUPLICATE_GUARD_MS) {
+      setCode("");
+      focusScanner();
+      return;
+    }
+
+    inFlightRef.current = true;
     setBusy(true);
     setError("");
     try {
@@ -66,13 +88,16 @@ export default function BarcodeScanner({
         setError("El código está duplicado dentro de esta empresa. Revisá el maestro de productos.");
         return;
       }
+      lastResolvedRef.current = { code: normalized, at: Date.now() };
       setCode("");
       onProduct(matches[0], action);
     } catch (e) {
       console.error(e);
       setError("No se pudo consultar el código. Verificá conexión, permisos y empresa activa.");
     } finally {
+      inFlightRef.current = false;
       setBusy(false);
+      focusScanner();
     }
   }
 
@@ -81,6 +106,7 @@ export default function BarcodeScanner({
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     setCameraOpen(false);
+    focusScanner();
   }
 
   async function openCamera() {
@@ -148,6 +174,41 @@ export default function BarcodeScanner({
     };
   }, [cameraOpen, detectorCtor]);
 
+  useEffect(() => {
+    focusScanner();
+  }, [empresaId, action]);
+
+  useEffect(() => {
+    function handleKeyboardWedge(event: KeyboardEvent) {
+      if (cameraOpen || event.ctrlKey || event.metaKey || event.altKey) return;
+
+      const active = document.activeElement as HTMLElement | null;
+      const isScannerInput = active === inputRef.current;
+      const isEditable = active?.tagName === "INPUT" || active?.tagName === "TEXTAREA" || active?.tagName === "SELECT" || active?.isContentEditable;
+      if (isEditable && !isScannerInput) return;
+      if (isScannerInput) return;
+
+      const now = Date.now();
+      if (now - wedgeLastKeyAtRef.current > SCANNER_GAP_MS) wedgeBufferRef.current = "";
+      wedgeLastKeyAtRef.current = now;
+
+      if (isLikelyScannerSubmit(event.key)) {
+        const buffered = normalizeBarcode(wedgeBufferRef.current);
+        wedgeBufferRef.current = "";
+        if (buffered.length >= 4) {
+          event.preventDefault();
+          void resolveCode(buffered);
+        }
+        return;
+      }
+
+      if (event.key.length === 1) wedgeBufferRef.current += event.key;
+    }
+
+    window.addEventListener("keydown", handleKeyboardWedge);
+    return () => window.removeEventListener("keydown", handleKeyboardWedge);
+  }, [cameraOpen, empresaId, action]);
+
   useEffect(() => () => stopCamera(), []);
 
   return (
@@ -167,9 +228,11 @@ export default function BarcodeScanner({
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input
+          ref={inputRef}
           type="text"
           inputMode="numeric"
           autoComplete="off"
+          autoFocus
           value={code}
           onChange={(e) => setCode(e.target.value)}
           onKeyDown={(e) => {
@@ -188,6 +251,10 @@ export default function BarcodeScanner({
           Escanear con cámara
         </button>
       </div>
+
+      <p style={{ margin: 0, opacity: 0.7, fontSize: 13 }}>
+        La pistola USB/Bluetooth puede leer aun sin tocar el campo. El foco vuelve automáticamente después de cada lectura.
+      </p>
 
       {cameraOpen && (
         <div style={{ display: "grid", gap: 8 }}>
