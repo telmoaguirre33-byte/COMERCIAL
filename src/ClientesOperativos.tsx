@@ -4,6 +4,7 @@ import {
   listarClientesSigo,
   registrarCobroClienteSigo,
   type ClienteSigo,
+  type MedioCobroSigo,
 } from "./clientes";
 
 type ClienteForm = {
@@ -35,6 +36,7 @@ export default function ClientesOperativos({ empresaId }: { empresaId: string })
   const [saving, setSaving] = useState(false);
   const [cobrando, setCobrando] = useState<ClienteSigo | null>(null);
   const [importeCobro, setImporteCobro] = useState("");
+  const [medioCobro, setMedioCobro] = useState<MedioCobroSigo>("efectivo");
 
   async function cargar() {
     setLoading(true);
@@ -65,6 +67,11 @@ export default function ClientesOperativos({ empresaId }: { empresaId: string })
 
   const saldoTotal = clientes.reduce((suma, cliente) => suma + Number(cliente.saldo_actual || 0), 0);
   const conDeuda = clientes.filter((cliente) => Number(cliente.saldo_actual || 0) > 0).length;
+  const importeCobroNumero = Number(importeCobro.replace(",", "."));
+  const cobroInvalido = !cobrando
+    || !Number.isFinite(importeCobroNumero)
+    || importeCobroNumero <= 0
+    || importeCobroNumero > Number(cobrando.saldo_actual || 0);
 
   function abrirNuevo() {
     setEditing(null);
@@ -84,6 +91,13 @@ export default function ClientesOperativos({ empresaId }: { empresaId: string })
       limiteCredito: cliente.limite_credito == null ? "" : String(cliente.limite_credito),
     });
     setFormOpen(true);
+    setError("");
+  }
+
+  function abrirCobro(cliente: ClienteSigo) {
+    setCobrando(cliente);
+    setImporteCobro("");
+    setMedioCobro("efectivo");
     setError("");
   }
 
@@ -114,14 +128,19 @@ export default function ClientesOperativos({ empresaId }: { empresaId: string })
   }
 
   async function registrarCobro() {
-    if (!cobrando) return;
-    const importe = Number(importeCobro.replace(",", "."));
+    if (!cobrando || cobroInvalido) return;
     setSaving(true);
     setError("");
     try {
-      await registrarCobroClienteSigo({ empresaId, clienteId: cobrando.id, importe });
+      await registrarCobroClienteSigo({
+        empresaId,
+        clienteId: cobrando.id,
+        importe: importeCobroNumero,
+        medioPago: medioCobro,
+      });
       setCobrando(null);
       setImporteCobro("");
+      setMedioCobro("efectivo");
       await cargar();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo registrar el cobro.");
@@ -172,7 +191,7 @@ export default function ClientesOperativos({ empresaId }: { empresaId: string })
                     <td>
                       <div className="row-actions">
                         <button className="admin-button" onClick={() => abrirEdicion(cliente)}>Editar</button>
-                        <button className="admin-button" disabled={Number(cliente.saldo_actual || 0) <= 0} onClick={() => { setCobrando(cliente); setImporteCobro(""); }}>Cobrar</button>
+                        <button className="admin-button" disabled={Number(cliente.saldo_actual || 0) <= 0} onClick={() => abrirCobro(cliente)}>Cobrar</button>
                       </div>
                     </td>
                   </tr>
@@ -212,11 +231,32 @@ export default function ClientesOperativos({ empresaId }: { empresaId: string })
       {cobrando && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) setCobrando(null); }}>
           <div className="modal" role="dialog" aria-modal="true">
-            <div className="page-header modal-header"><div><h2>Registrar cobro</h2><p>{cobrando.nombre} · saldo $ {Number(cobrando.saldo_actual).toLocaleString("es-AR")}</p></div></div>
-            <div className="form-group"><label>Importe</label><input autoFocus inputMode="decimal" value={importeCobro} onChange={(e) => setImporteCobro(e.target.value)} /></div>
+            <div className="page-header modal-header">
+              <div><h2>Registrar cobro</h2><p>{cobrando.nombre} · saldo $ {Number(cobrando.saldo_actual).toLocaleString("es-AR")}</p></div>
+            </div>
+            <div className="form-grid">
+              <div className="form-group">
+                <label>Importe</label>
+                <input autoFocus inputMode="decimal" value={importeCobro} onChange={(e) => setImporteCobro(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label>Medio de cobro</label>
+                <select value={medioCobro} onChange={(e) => setMedioCobro(e.target.value as MedioCobroSigo)}>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="debito">Débito</option>
+                  <option value="credito">Crédito</option>
+                  <option value="transferencia">Transferencia</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </div>
+            </div>
+            {importeCobro.trim() && importeCobroNumero > Number(cobrando.saldo_actual || 0) && (
+              <p className="form-error" role="alert">El importe supera el saldo pendiente. Máximo: $ {Number(cobrando.saldo_actual).toLocaleString("es-AR")}.</p>
+            )}
+            <p style={{ opacity: 0.78 }}>El cobro reduce la cuenta corriente y registra el ingreso en Caja en una sola operación.</p>
             <div className="form-actions">
               <button className="admin-button" disabled={saving} onClick={() => setCobrando(null)}>Cancelar</button>
-              <button className="primary-button" disabled={saving || !importeCobro.trim()} onClick={() => void registrarCobro()}>{saving ? "Registrando…" : "Registrar cobro"}</button>
+              <button className="primary-button" disabled={saving || cobroInvalido} onClick={() => void registrarCobro()}>{saving ? "Registrando…" : "Registrar cobro"}</button>
             </div>
           </div>
         </div>
