@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { verificarSaludOperativaSigo, type SaludOperativaSigo } from "./health";
 import { cargarResumenOperativoSigo, type ResumenOperativoSigo } from "./informes";
 
 const vacio: ResumenOperativoSigo = {
@@ -38,8 +39,15 @@ function nombreMedio(medio: string) {
   return nombres[medio] ?? medio;
 }
 
+function etiquetaSalud(salud: SaludOperativaSigo) {
+  if (salud.estado === "operativo") return "Operación crítica disponible";
+  if (salud.estado === "parcial") return "Operación parcialmente validada";
+  return "Bloqueo de base detectado";
+}
+
 export default function InformesOperativos({ empresaId }: { empresaId: string }) {
   const [resumen, setResumen] = useState<ResumenOperativoSigo>(vacio);
+  const [salud, setSalud] = useState<SaludOperativaSigo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -47,9 +55,15 @@ export default function InformesOperativos({ empresaId }: { empresaId: string })
     setLoading(true);
     setError("");
     try {
-      setResumen(await cargarResumenOperativoSigo(empresaId));
+      const [nuevoResumen, nuevaSalud] = await Promise.all([
+        cargarResumenOperativoSigo(empresaId),
+        verificarSaludOperativaSigo(empresaId),
+      ]);
+      setResumen(nuevoResumen);
+      setSalud(nuevaSalud);
     } catch (err) {
       setResumen(vacio);
+      setSalud(null);
       setError(err instanceof Error ? err.message : "No se pudieron cargar los informes.");
     } finally {
       setLoading(false);
@@ -78,6 +92,23 @@ export default function InformesOperativos({ empresaId }: { empresaId: string })
         <div className="panel" role="alert">
           <h3>No se pudo cargar el tablero</h3>
           <p>{error}</p>
+        </div>
+      )}
+
+      {!error && salud && (
+        <div className="panel" role={salud.estado === "operativo" ? undefined : "alert"}>
+          <h3>{etiquetaSalud(salud)}</h3>
+          <p>{salud.operativos}/{salud.total} bloques críticos accesibles para la empresa activa.</p>
+          <div className="stats-grid">
+            {salud.modulos.map((modulo) => (
+              <div className="stat-card" key={modulo.modulo}>
+                <span>{modulo.modulo}</span>
+                <strong>{modulo.estado === "operativo" ? "OK" : modulo.estado === "no_disponible" ? "FALTA SQL" : "REVISAR"}</strong>
+                <small>{modulo.detalle}</small>
+              </div>
+            ))}
+          </div>
+          <small>Última validación: {new Date(salud.verificadoEn).toLocaleString("es-AR")}</small>
         </div>
       )}
 
@@ -122,7 +153,7 @@ export default function InformesOperativos({ empresaId }: { empresaId: string })
           <div className="panel">
             <h3>Lectura gerencial rápida</h3>
             <p>
-              SIGO consolida ventas, caja, compras, stock y cuentas corrientes sin mezclar empresas. El tablero ya no limita el histórico de ventas a 500 registros y mantiene visibles los módulos sanos aunque otro módulo todavía no esté disponible.
+              SIGO consolida ventas, caja, compras, stock y cuentas corrientes sin mezclar empresas. Además valida en tiempo de ejecución si la base productiva tiene disponibles los bloques críticos, para distinguir un módulo vacío de una migración faltante o un problema de permisos.
             </p>
           </div>
         </>
