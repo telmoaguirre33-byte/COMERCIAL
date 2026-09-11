@@ -1,35 +1,81 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ClientesOperativos from "./ClientesOperativos";
 import ComprasOperativas from "./ComprasOperativas";
 import InformesOperativos from "./InformesOperativos";
 import SigoApp from "./SigoApp";
 import TenantSwitcher from "./TenantSwitcher";
 import type { EmpresaOperativa } from "./tenant";
+import {
+  etiquetaRol,
+  type SigoWorkspace,
+  workspaceInicial,
+  workspacePermitido,
+  workspacesPermitidos,
+} from "./workspacePermissions";
+
+const WORKSPACE_LABELS: Record<SigoWorkspace, string> = {
+  operacion: "Operación",
+  clientes: "Clientes / Ctas. corrientes",
+  compras: "Compras / Proveedores",
+  informes: "Informes",
+};
 
 export default function SigoRoot() {
   const [empresaActiva, setEmpresaActiva] = useState<EmpresaOperativa | null>(null);
   const [tenantReady, setTenantReady] = useState(false);
-  const [workspace, setWorkspace] = useState<"operacion" | "clientes" | "compras" | "informes">("operacion");
+  const [workspace, setWorkspace] = useState<SigoWorkspace>("operacion");
+
+  const permitidos = useMemo(
+    () => (empresaActiva ? workspacesPermitidos(empresaActiva.rol) : []),
+    [empresaActiva],
+  );
 
   const handleEmpresaChange = useCallback((empresa: EmpresaOperativa | null) => {
     setEmpresaActiva(empresa);
     setTenantReady(true);
-    setWorkspace("operacion");
+    setWorkspace(empresa ? workspaceInicial(empresa.rol) : "operacion");
   }, []);
+
+  useEffect(() => {
+    if (!empresaActiva) return;
+    if (!workspacePermitido(empresaActiva.rol, workspace)) {
+      setWorkspace(workspaceInicial(empresaActiva.rol));
+    }
+  }, [empresaActiva, workspace]);
+
+  function abrirWorkspace(destino: SigoWorkspace) {
+    if (!empresaActiva || !workspacePermitido(empresaActiva.rol, destino)) return;
+    setWorkspace(destino);
+  }
 
   return (
     <div className="sigo-root">
+      <style>{`
+        /* Clientes, Compras e Informes se navegan desde la barra global.
+           Se ocultan sus duplicados legacy para evitar botones que llevan a "Pendiente". */
+        .sigo-operation-only .sidebar .menu > button:nth-child(4),
+        .sigo-operation-only .sidebar .menu > button:nth-child(5),
+        .sigo-operation-only .sidebar .menu > button:nth-child(7) { display: none; }
+      `}</style>
+
       <div className="sigo-tenant-bar" role="region" aria-label="Contexto operativo SIGO">
         <div className="sigo-tenant-copy">
           <strong>SIGO</strong>
           <span>Sistema Inteligente de Gestión Operativa</span>
+          {empresaActiva && <small>{empresaActiva.empresa_nombre} · {etiquetaRol(empresaActiva.rol)}</small>}
         </div>
         {empresaActiva && (
-          <div className="topbar-actions">
-            <button className={workspace === "operacion" ? "primary-button" : "admin-button"} onClick={() => setWorkspace("operacion")}>Operación</button>
-            <button className={workspace === "clientes" ? "primary-button" : "admin-button"} onClick={() => setWorkspace("clientes")}>Clientes / Ctas. corrientes</button>
-            <button className={workspace === "compras" ? "primary-button" : "admin-button"} onClick={() => setWorkspace("compras")}>Compras / Proveedores</button>
-            <button className={workspace === "informes" ? "primary-button" : "admin-button"} onClick={() => setWorkspace("informes")}>Informes</button>
+          <div className="topbar-actions" role="navigation" aria-label="Módulos habilitados">
+            {permitidos.map((item) => (
+              <button
+                key={item}
+                className={workspace === item ? "primary-button" : "admin-button"}
+                aria-current={workspace === item ? "page" : undefined}
+                onClick={() => abrirWorkspace(item)}
+              >
+                {WORKSPACE_LABELS[item]}
+              </button>
+            ))}
           </div>
         )}
         <TenantSwitcher value={empresaActiva?.empresa_id ?? null} onChange={handleEmpresaChange} />
@@ -44,8 +90,13 @@ export default function SigoRoot() {
           <main className="main" style={{ minHeight: "calc(100vh - 88px)" }}><section className="content"><ComprasOperativas key={empresaActiva.empresa_id} empresaId={empresaActiva.empresa_id} /></section></main>
         ) : workspace === "informes" ? (
           <main className="main" style={{ minHeight: "calc(100vh - 88px)" }}><section className="content"><InformesOperativos key={empresaActiva.empresa_id} empresaId={empresaActiva.empresa_id} /></section></main>
+        ) : workspacePermitido(empresaActiva.rol, "operacion") ? (
+          <div className="sigo-operation-only"><SigoApp key={empresaActiva.empresa_id} empresa={empresaActiva} /></div>
         ) : (
-          <SigoApp key={empresaActiva.empresa_id} empresa={empresaActiva} />
+          <main className="sigo-tenant-state" role="alert">
+            <h1>Acceso limitado por rol</h1>
+            <p>Tu perfil {etiquetaRol(empresaActiva.rol)} no tiene habilitada la operación interna de esta empresa.</p>
+          </main>
         )
       ) : (
         <main className="sigo-tenant-state" role="alert">
