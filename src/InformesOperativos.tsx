@@ -15,10 +15,27 @@ const vacio: ResumenOperativoSigo = {
   ventasTotal: 0,
   ventasHoy: 0,
   ventasHoyTotal: 0,
+  cajaHoyIngresos: 0,
+  cajaHoyEgresos: 0,
+  cajaHoyNeto: 0,
+  cajaHoyPorMedio: {},
+  modulosNoDisponibles: [],
 };
 
 function dinero(valor: number) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(valor);
+}
+
+function nombreMedio(medio: string) {
+  const nombres: Record<string, string> = {
+    efectivo: "Efectivo",
+    debito: "Débito",
+    credito: "Crédito",
+    transferencia: "Transferencia",
+    cuenta_corriente: "Cuenta corriente",
+    otro: "Otro",
+  };
+  return nombres[medio] ?? medio;
 }
 
 export default function InformesOperativos({ empresaId }: { empresaId: string }) {
@@ -45,6 +62,8 @@ export default function InformesOperativos({ empresaId }: { empresaId: string })
 
   if (loading) return <div className="panel"><p>Cargando indicadores operativos…</p></div>;
 
+  const mediosCaja = Object.entries(resumen.cajaHoyPorMedio).sort((a, b) => b[1] - a[1]);
+
   return (
     <div className="products-page">
       <div className="page-header">
@@ -57,9 +76,16 @@ export default function InformesOperativos({ empresaId }: { empresaId: string })
 
       {error && (
         <div className="panel" role="alert">
-          <h3>No se pudieron consolidar todos los indicadores</h3>
+          <h3>No se pudo cargar el tablero</h3>
           <p>{error}</p>
-          <p>Verificá que las migraciones de Ventas, Clientes y Compras estén aplicadas en Supabase.</p>
+        </div>
+      )}
+
+      {!error && resumen.modulosNoDisponibles.length > 0 && (
+        <div className="panel" role="alert">
+          <h3>Tablero parcial</h3>
+          <p>Los módulos siguientes no respondieron y sus indicadores se muestran en cero: {resumen.modulosNoDisponibles.join(", ")}.</p>
+          <p>El resto del tablero continúa operativo para no ocultar información disponible.</p>
         </div>
       )}
 
@@ -67,6 +93,7 @@ export default function InformesOperativos({ empresaId }: { empresaId: string })
         <>
           <div className="stats-grid">
             <div className="stat-card"><span>Ventas de hoy</span><strong>{resumen.ventasHoy}</strong><small>{dinero(resumen.ventasHoyTotal)}</small></div>
+            <div className="stat-card"><span>Caja de hoy</span><strong>{dinero(resumen.cajaHoyNeto)}</strong><small>Ingresos {dinero(resumen.cajaHoyIngresos)} · Egresos {dinero(resumen.cajaHoyEgresos)}</small></div>
             <div className="stat-card"><span>Ventas registradas</span><strong>{resumen.ventasCantidad}</strong><small>{dinero(resumen.ventasTotal)}</small></div>
             <div className="stat-card"><span>Compras registradas</span><strong>{resumen.comprasCantidad}</strong><small>{dinero(resumen.comprasTotal)}</small></div>
             <div className="stat-card"><span>Unidades en stock</span><strong>{resumen.unidadesStock}</strong><small>{resumen.productos} productos</small></div>
@@ -76,9 +103,26 @@ export default function InformesOperativos({ empresaId }: { empresaId: string })
           </div>
 
           <div className="panel">
+            <h3>Caja de hoy por medio de pago</h3>
+            {mediosCaja.length === 0 ? (
+              <p>Sin ingresos de Caja registrados hoy.</p>
+            ) : (
+              <div className="stats-grid">
+                {mediosCaja.map(([medio, total]) => (
+                  <div className="stat-card" key={medio}>
+                    <span>{nombreMedio(medio)}</span>
+                    <strong>{dinero(total)}</strong>
+                    <small>Ingresos registrados</small>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="panel">
             <h3>Lectura gerencial rápida</h3>
             <p>
-              SIGO consolida ventas, compras, stock y cuentas corrientes sin mezclar empresas. Los valores se leen desde tablas protegidas por tenant/RLS.
+              SIGO consolida ventas, caja, compras, stock y cuentas corrientes sin mezclar empresas. El tablero ya no limita el histórico de ventas a 500 registros y mantiene visibles los módulos sanos aunque otro módulo todavía no esté disponible.
             </p>
           </div>
         </>
