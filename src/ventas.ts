@@ -13,6 +13,18 @@ export type VentaItemSigoInput = {
   cantidad: number;
 };
 
+export type IntegridadVentaSigo = "ok" | "revisar" | "no_verificada";
+
+export type VentaRecienteSigo = {
+  id: string;
+  numero: number | null;
+  total: number;
+  medioPago: MedioPagoSigo;
+  clienteId: string | null;
+  createdAt: string;
+  integridad: IntegridadVentaSigo;
+};
+
 function crearIdempotencyKey() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -41,13 +53,83 @@ function mensajeVenta(error: unknown): string {
   return raw || "No se pudo confirmar la venta.";
 }
 
+async function verificarIntegridadVentas(
+  empresaId: string,
+  ventas: Array<{ id: string; medio_pago: string }>,
+): Promise<Map<string, IntegridadVentaSigo>> {
+  const resultado = new Map<string, IntegridadVentaSigo>();
+  ventas.forEach((venta) => resultado.set(venta.id, "no_verificada"));
+  if (ventas.length === 0) return resultado;
+
+  const idsCaja = ventas.filter((venta) => venta.medio_pago !== "cuenta_corriente").map((venta) => venta.id);
+  const idsCuenta = ventas.filter((venta) => venta.medio_pago === "cuenta_corriente").map((venta) => venta.id);
+
+  try {
+    const [caja, cuenta] = await Promise.all([
+      idsCaja.length
+        ? supabase.from("caja_movimientos_sigo").select("venta_id").eq("empresa_id", empresaId).eq("tipo", "ingreso").in("venta_id", idsCaja)
+        : Promise.resolve({ data: [], error: null }),
+      idsCuenta.length
+        ? supabase.from("cliente_movimientos_sigo").select("venta_id").eq("empresa_id", empresaId).eq("tipo", "debe").in("venta_id", idsCuenta)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if (caja.error || cuenta.error) return resultado;
+
+    const cajaOk = new Set((caja.data ?? []).map((mov) => String(mov.venta_id)));
+    const cuentaOk = new Set((cuenta.data ?? []).map((mov) => String(mov.venta_id)));
+
+    ventas.forEach((venta) => {
+      const ok = venta.medio_pago === "cuenta_corriente" ? cuentaOk.has(venta.id) : cajaOk.has(venta.id);
+      resultado.set(venta.id, ok ? "ok" : "revisar");
+    });
+  } catch {
+    // La venta no debe reportarse como fallida sólo porque el chequeo posterior no pudo leerse.
+  }
+
+  return resultado;
+}
+
+export async function listarVentasRecientesSigo(empresaId: string, limite = 10): Promise<VentaRecienteSigo[]> {
+  if (!empresaId) return [];
+  const safeLimit = Math.min(Math.max(Math.trunc(limite), 1), 25);
+  const { data, error } = await supabase
+    .from("ventas_sigo")
+    .select("id,numero,total,medio_pago,cliente_id,created_at")
+    .eq("empresa_id", empresaId)
+    .eq("estado", "confirmada")
+    .order("created_at", { ascending: false })
+    .limit(safeLimit);
+
+  if (error) throw new Error(mensajeVenta(error));
+  const rows = (data ?? []) as Array<{
+    id: string;
+    numero: number | null;
+    total: number | string;
+    medio_pago: MedioPagoSigo;
+    cliente_id: string | null;
+    created_at: string;
+  }>;
+  const integridad = await verificarIntegridadVentas(empresaId, rows);
+
+  return rows.map((venta) => ({
+    id: venta.id,
+    numero: venta.numero,
+    total: Number(venta.total || 0),
+    medioPago: venta.medio_pago,
+    clienteId: venta.cliente_id,
+    createdAt: venta.created_at,
+    integridad: integridad.get(venta.id) ?? "no_verificada",
+  }));
+}
+
 export async function confirmarVentaSigo(input: {
   empresaId: string;
   items: VentaItemSigoInput[];
   medioPago: MedioPagoSigo;
   clienteId?: string | null;
   idempotencyKey?: string;
-}): Promise<{ ventaId: string; idempotencyKey: string }> {
+}): Promise<{ ventaId: string; idempotencyKey: string; integridad: IntegridadVentaSigo }> {
   if (!input.empresaId) throw new Error("Seleccioná una empresa activa antes de vender.");
   if (input.items.length === 0) throw new Error("Agregá al menos un producto antes de confirmar.");
   if (input.medioPago === "cuenta_corriente" && !input.clienteId) {
@@ -72,5 +154,10 @@ export async function confirmarVentaSigo(input: {
   if (error) throw new Error(mensajeVenta(error));
   if (!data) throw new Error("La venta no devolvió comprobante. No la repitas hasta verificar su estado.");
 
-  return { ventaId: data as string, idempotencyKey };
+  const ventaId = data as string;
+  const integridad = await verificarIntegridadVentas(input.empresaId, [{ id: ventaId, medio_pago: input.medioPago }])
+    .then((mapa) => mapa.get(ventaId) ?? "no_verificada")
+    .catch(() => "no_verificada" as const);
+
+  return { ventaId, idempotencyKey, integridad };
 }
