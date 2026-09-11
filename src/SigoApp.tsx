@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { EmpresaOperativa } from "./tenant";
 import BarcodeScanner from "./BarcodeScanner";
 import type { BarcodeAction, BarcodeProduct } from "./barcode";
+import VentaRapidaOperativa from "./VentaRapidaOperativa";
 import {
   eliminarProductoSigo,
   guardarProductoSigo,
@@ -72,7 +73,7 @@ export default function SigoApp({ empresa }: { empresa: EmpresaOperativa }) {
           {section === "Inicio" && <Inicio empresa={empresa} onProductos={() => setSection("Productos")} onStock={() => setSection("Stock")} />}
           {section === "Productos" && <Productos empresaId={empresa.empresa_id} />}
           {section === "Stock" && <Stock empresaId={empresa.empresa_id} />}
-          {section === "Ventas" && <VentasRapidas empresaId={empresa.empresa_id} />}
+          {section === "Ventas" && <VentaRapidaOperativa empresaId={empresa.empresa_id} />}
           {section !== "Inicio" && section !== "Productos" && section !== "Stock" && section !== "Ventas" && <Pendiente title={section} />}
         </section>
       </main>
@@ -397,43 +398,6 @@ function Stock({ empresaId }: { empresaId: string }) {
             {filas.length === 0 && <div className="table-empty">No hay stock visible para mostrar.</div>}
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-function VentasRapidas({ empresaId }: { empresaId: string }) {
-  const [items, setItems] = useState<Array<{ producto: BarcodeProduct; cantidad: number }>>([]);
-
-  function agregar(producto: BarcodeProduct) {
-    setItems((actual) => {
-      const existente = actual.find((item) => item.producto.id === producto.id);
-      if (existente) return actual.map((item) => item.producto.id === producto.id ? { ...item, cantidad: item.cantidad + 1 } : item);
-      return [...actual, { producto, cantidad: 1 }];
-    });
-  }
-
-  const total = items.reduce((suma, item) => suma + (Number(item.producto.precio_venta || 0) * item.cantidad), 0);
-
-  return (
-    <div className="products-page">
-      <div className="page-header">
-        <div><h2>Venta rápida</h2><p>Armado de venta por pistola, código manual o cámara. La confirmación fiscal/caja todavía requiere integración final.</p></div>
-        <button className="admin-button" disabled={items.length === 0} onClick={() => setItems([])}>Vaciar</button>
-      </div>
-      <div className="panel">
-        <BarcodeScanner empresaId={empresaId} action="vender" onProduct={(producto) => agregar(producto)} />
-      </div>
-      <div className="panel">
-        <h3>Carrito</h3>
-        <div className="table-wrapper">
-          <table className="products-table">
-            <thead><tr><th>Producto</th><th>Cantidad</th><th>Precio</th><th>Subtotal</th></tr></thead>
-            <tbody>{items.map((item) => <tr key={item.producto.id}><td><strong>{item.producto.nombre}</strong></td><td>{item.cantidad}</td><td>{item.producto.precio_venta == null ? "Restringido" : `$ ${Number(item.producto.precio_venta).toLocaleString("es-AR")}`}</td><td>{item.producto.precio_venta == null ? "Restringido" : `$ ${(Number(item.producto.precio_venta) * item.cantidad).toLocaleString("es-AR")}`}</td></tr>)}</tbody>
-          </table>
-          {items.length === 0 && <div className="table-empty">Escaneá un producto para iniciar la venta.</div>}
-        </div>
-        <div className="form-actions"><strong>Total visible: $ {total.toLocaleString("es-AR")}</strong><button className="primary-button" disabled>Confirmar venta · integración pendiente</button></div>
       </div>
     </div>
   );
