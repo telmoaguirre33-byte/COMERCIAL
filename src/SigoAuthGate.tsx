@@ -9,16 +9,24 @@ type Props = {
 };
 
 type AuthMode = "login" | "recovery";
+type LoginIssue = "credentials" | "unconfirmed" | "network" | "unknown" | null;
 
-function mensajeLogin(errorMessage: string) {
+function clasificarLogin(errorMessage: string): LoginIssue {
   const normalized = errorMessage.toLowerCase();
-  if (normalized.includes("invalid login credentials")) {
+  if (normalized.includes("invalid login credentials")) return "credentials";
+  if (normalized.includes("email not confirmed")) return "unconfirmed";
+  if (normalized.includes("network") || normalized.includes("fetch")) return "network";
+  return "unknown";
+}
+
+function mensajeLogin(issue: LoginIssue) {
+  if (issue === "credentials") {
     return "El email o la contraseña no coinciden. Podés recuperar la contraseña desde esta pantalla.";
   }
-  if (normalized.includes("email not confirmed")) {
-    return "Tu email todavía no fue confirmado. Revisá el correo de activación antes de ingresar.";
+  if (issue === "unconfirmed") {
+    return "Tu email todavía no fue confirmado. Podés reenviar el correo de activación desde esta pantalla.";
   }
-  if (normalized.includes("network") || normalized.includes("fetch")) {
+  if (issue === "network") {
     return "No se pudo conectar con el servicio de acceso. Revisá internet e intentá nuevamente.";
   }
   return "No se pudo iniciar sesión. Intentá nuevamente o recuperá tu contraseña.";
@@ -35,6 +43,7 @@ export default function SigoAuthGate({ children }: Props) {
   const [success, setSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [mode, setMode] = useState<AuthMode>("login");
+  const [loginIssue, setLoginIssue] = useState<LoginIssue>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -69,25 +78,34 @@ export default function SigoAuthGate({ children }: Props) {
     setSubmitting(true);
     setError("");
     setSuccess("");
+    setLoginIssue(null);
 
-    const { error: loginError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
+    const normalizedEmail = email.trim().toLowerCase();
+    const { data, error: loginError } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
       password,
     });
 
-    if (loginError) {
-      setError(mensajeLogin(loginError.message));
+    if (loginError || !data.session) {
+      const issue = clasificarLogin(loginError?.message ?? "unknown");
+      setLoginIssue(issue);
+      setError(mensajeLogin(issue));
       setSubmitting(false);
       return;
     }
 
+    // No dependemos solamente del listener: dejamos la sesión disponible de inmediato
+    // para evitar que en móviles lentos el botón parezca no ingresar.
+    setSession(data.session);
+    setEmail(normalizedEmail);
     setSubmitting(false);
   }
 
   async function recuperarAcceso() {
-    const normalizedEmail = email.trim();
+    const normalizedEmail = email.trim().toLowerCase();
     setError("");
     setSuccess("");
+    setLoginIssue(null);
 
     if (!normalizedEmail) {
       setError("Ingresá primero tu email para poder recuperar la contraseña.");
@@ -96,7 +114,7 @@ export default function SigoAuthGate({ children }: Props) {
 
     setSubmitting(true);
     const { error: recoveryError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-      redirectTo: window.location.origin,
+      redirectTo: `${window.location.origin}${window.location.pathname}`,
     });
     setSubmitting(false);
 
@@ -105,7 +123,35 @@ export default function SigoAuthGate({ children }: Props) {
       return;
     }
 
+    setEmail(normalizedEmail);
     setSuccess("Te enviamos un correo para recuperar el acceso. Abrí el enlace desde ese mensaje y volvé a SIGO.");
+  }
+
+  async function reenviarActivacion() {
+    const normalizedEmail = email.trim().toLowerCase();
+    setError("");
+    setSuccess("");
+
+    if (!normalizedEmail) {
+      setError("Ingresá tu email para reenviar la activación.");
+      return;
+    }
+
+    setSubmitting(true);
+    const { error: resendError } = await supabase.auth.resend({
+      type: "signup",
+      email: normalizedEmail,
+      options: { emailRedirectTo: `${window.location.origin}${window.location.pathname}` },
+    });
+    setSubmitting(false);
+
+    if (resendError) {
+      setError("No se pudo reenviar la activación. Revisá el email o usá recuperación de contraseña.");
+      return;
+    }
+
+    setEmail(normalizedEmail);
+    setSuccess("Correo de activación reenviado. Revisá también Spam/No deseado y abrí el enlace antes de ingresar.");
   }
 
   async function guardarNuevaPassword(event: FormEvent<HTMLFormElement>) {
@@ -223,6 +269,11 @@ export default function SigoAuthGate({ children }: Props) {
               <button className="sigo-auth-secondary" type="button" disabled={submitting} onClick={() => void recuperarAcceso()}>
                 ¿Olvidaste tu contraseña?
               </button>
+              {loginIssue === "unconfirmed" ? (
+                <button className="sigo-auth-secondary" type="button" disabled={submitting} onClick={() => void reenviarActivacion()}>
+                  Reenviar correo de activación
+                </button>
+              ) : null}
             </form>
           </>
         )}
