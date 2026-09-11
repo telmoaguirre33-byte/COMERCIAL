@@ -9,27 +9,35 @@ type Props = {
 };
 
 type AuthMode = "login" | "recovery";
-type LoginIssue = "credentials" | "unconfirmed" | "network" | "unknown" | null;
+type LoginIssue = "credentials" | "unconfirmed" | "network" | "rate_limit" | "disabled" | "unknown" | null;
 
 function clasificarLogin(errorMessage: string): LoginIssue {
   const normalized = errorMessage.toLowerCase();
   if (normalized.includes("invalid login credentials")) return "credentials";
   if (normalized.includes("email not confirmed")) return "unconfirmed";
+  if (normalized.includes("rate limit") || normalized.includes("too many requests")) return "rate_limit";
+  if (normalized.includes("banned") || normalized.includes("disabled")) return "disabled";
   if (normalized.includes("network") || normalized.includes("fetch")) return "network";
   return "unknown";
 }
 
 function mensajeLogin(issue: LoginIssue) {
   if (issue === "credentials") {
-    return "El email o la contraseña no coinciden. Podés recuperar la contraseña desde esta pantalla.";
+    return "El email o la contraseña no coinciden. Podés recuperar la contraseña o pedir un enlace seguro de ingreso.";
   }
   if (issue === "unconfirmed") {
     return "Tu email todavía no fue confirmado. Podés reenviar el correo de activación desde esta pantalla.";
   }
+  if (issue === "rate_limit") {
+    return "Hubo demasiados intentos seguidos. Esperá unos minutos y usá el enlace seguro de ingreso para evitar nuevos bloqueos.";
+  }
+  if (issue === "disabled") {
+    return "Este usuario está deshabilitado. Un administrador de SIGO debe revisar su acceso antes de continuar.";
+  }
   if (issue === "network") {
     return "No se pudo conectar con el servicio de acceso. Revisá internet e intentá nuevamente.";
   }
-  return "No se pudo iniciar sesión. Intentá nuevamente o recuperá tu contraseña.";
+  return "No se pudo iniciar sesión. Intentá nuevamente o usá el enlace seguro de ingreso.";
 }
 
 export default function SigoAuthGate({ children }: Props) {
@@ -101,6 +109,42 @@ export default function SigoAuthGate({ children }: Props) {
     setSubmitting(false);
   }
 
+  async function enviarEnlaceSeguro() {
+    const normalizedEmail = email.trim().toLowerCase();
+    setError("");
+    setSuccess("");
+    setLoginIssue(null);
+
+    if (!normalizedEmail) {
+      setError("Ingresá primero tu email para enviarte un enlace seguro de ingreso.");
+      return;
+    }
+
+    setSubmitting(true);
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email: normalizedEmail,
+      options: {
+        emailRedirectTo: `${window.location.origin}${window.location.pathname}`,
+        shouldCreateUser: false,
+      },
+    });
+    setSubmitting(false);
+
+    if (otpError) {
+      const issue = clasificarLogin(otpError.message);
+      setLoginIssue(issue);
+      setError(
+        issue === "rate_limit"
+          ? mensajeLogin(issue)
+          : "No se pudo enviar el enlace seguro. Verificá que el email corresponda a un usuario habilitado de SIGO.",
+      );
+      return;
+    }
+
+    setEmail(normalizedEmail);
+    setSuccess("Te enviamos un enlace seguro de ingreso. Abrilo desde el correo en este mismo dispositivo para entrar a SIGO sin contraseña.");
+  }
+
   async function recuperarAcceso() {
     const normalizedEmail = email.trim().toLowerCase();
     setError("");
@@ -119,7 +163,9 @@ export default function SigoAuthGate({ children }: Props) {
     setSubmitting(false);
 
     if (recoveryError) {
-      setError("No se pudo enviar el correo de recuperación. Verificá el email e intentá nuevamente.");
+      const issue = clasificarLogin(recoveryError.message);
+      setLoginIssue(issue);
+      setError(issue === "rate_limit" ? mensajeLogin(issue) : "No se pudo enviar el correo de recuperación. Verificá el email e intentá nuevamente.");
       return;
     }
 
@@ -146,7 +192,9 @@ export default function SigoAuthGate({ children }: Props) {
     setSubmitting(false);
 
     if (resendError) {
-      setError("No se pudo reenviar la activación. Revisá el email o usá recuperación de contraseña.");
+      const issue = clasificarLogin(resendError.message);
+      setLoginIssue(issue);
+      setError(issue === "rate_limit" ? mensajeLogin(issue) : "No se pudo reenviar la activación. Revisá el email o usá recuperación de contraseña.");
       return;
     }
 
@@ -266,6 +314,9 @@ export default function SigoAuthGate({ children }: Props) {
               <button className="sigo-auth-submit" type="submit" disabled={submitting}>
                 {submitting ? "Ingresando…" : "Ingresar a SIGO"}
               </button>
+              <button className="sigo-auth-secondary" type="button" disabled={submitting} onClick={() => void enviarEnlaceSeguro()}>
+                Ingresar con enlace al correo
+              </button>
               <button className="sigo-auth-secondary" type="button" disabled={submitting} onClick={() => void recuperarAcceso()}>
                 ¿Olvidaste tu contraseña?
               </button>
@@ -278,7 +329,7 @@ export default function SigoAuthGate({ children }: Props) {
           </>
         )}
 
-        <div className="sigo-auth-help">Acceso protegido por empresa, rol y permisos.</div>
+        <div className="sigo-auth-help">Acceso protegido por empresa, rol y permisos. El enlace seguro no crea usuarios nuevos.</div>
       </section>
     </main>
   );
