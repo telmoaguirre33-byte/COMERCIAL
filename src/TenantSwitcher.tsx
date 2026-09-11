@@ -8,6 +8,7 @@ import {
   resolverEmpresaActiva,
   type EmpresaOperativa,
 } from "./tenant";
+import { supabase } from "./supabase";
 
 type Props = {
   value?: string | null;
@@ -65,6 +66,11 @@ export default function TenantSwitcher({ value, onChange, disabled = false }: Pr
     onChange(empresa);
   }
 
+  async function cerrarSesion() {
+    guardarEmpresaActiva(null);
+    await supabase.auth.signOut();
+  }
+
   async function crearEmpresa(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nombre = nombreNuevaEmpresa.trim();
@@ -103,9 +109,14 @@ export default function TenantSwitcher({ value, onChange, disabled = false }: Pr
         <span style={eyebrowStyle}>Empresa activa</span>
         <strong>{error}</strong>
         {detalleError ? <small style={{ opacity: 0.72 }}>{detalleError}</small> : null}
-        <button type="button" onClick={() => void load()} style={secondaryButtonStyle}>
-          Reintentar
-        </button>
+        <div style={buttonRowStyle}>
+          <button type="button" onClick={() => void load()} style={secondaryButtonStyle}>
+            Reintentar
+          </button>
+          <button type="button" onClick={() => void cerrarSesion()} style={secondaryButtonStyle}>
+            Cambiar usuario
+          </button>
+        </div>
       </div>
     );
   }
@@ -132,6 +143,9 @@ export default function TenantSwitcher({ value, onChange, disabled = false }: Pr
             {creando ? "Creando…" : "Crear y entrar"}
           </button>
         </form>
+        <button type="button" onClick={() => void cerrarSesion()} style={secondaryButtonStyle}>
+          Ingresar con otro usuario
+        </button>
       </div>
     );
   }
@@ -221,4 +235,10 @@ const secondaryButtonStyle: CSSProperties = {
   background: "transparent",
   fontWeight: 700,
   cursor: "pointer",
+};
+
+const buttonRowStyle: CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 8,
 };
