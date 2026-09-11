@@ -6,12 +6,19 @@ import {
   guardarProveedorSigo,
   listarComprasSigo,
   listarProveedoresSigo,
+  verificarCompraSigo,
   type CompraItemInput,
   type CompraSigo,
   type ProveedorSigo,
+  type VerificacionCompraSigo,
 } from "./compras";
 
 type Linea = CompraItemInput & { key: string };
+
+type UltimaConciliacion = {
+  compraId: string;
+  resultado: VerificacionCompraSigo;
+};
 
 function nuevaLinea(): Linea {
   return { key: crypto.randomUUID(), producto_id: "", cantidad: 1, costo_unitario: 0 };
@@ -31,6 +38,7 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
   const [lineas, setLineas] = useState<Linea[]>([nuevaLinea()]);
   const [nuevoProveedor, setNuevoProveedor] = useState("");
   const [nuevoCuit, setNuevoCuit] = useState("");
+  const [ultimaConciliacion, setUltimaConciliacion] = useState<UltimaConciliacion | null>(null);
 
   async function cargar() {
     setLoading(true);
@@ -52,7 +60,10 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
     }
   }
 
-  useEffect(() => { void cargar(); }, [empresaId]);
+  useEffect(() => {
+    setUltimaConciliacion(null);
+    void cargar();
+  }, [empresaId]);
 
   const total = useMemo(
     () => lineas.reduce((sum, l) => sum + Number(l.cantidad || 0) * Number(l.costo_unitario || 0), 0),
@@ -84,18 +95,28 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
     e.preventDefault();
     setSaving(true);
     setError("");
+    setUltimaConciliacion(null);
     try {
       const validas = lineas.filter((l) => l.producto_id && l.cantidad > 0 && l.costo_unitario >= 0);
       if (validas.length !== lineas.length) throw new Error("Completá correctamente todas las líneas de la compra.");
-      await confirmarCompraSigo({
+
+      const items = validas.map(({ producto_id, cantidad, costo_unitario }) => ({ producto_id, cantidad, costo_unitario }));
+      const stockAntes = Object.fromEntries(
+        items.map((item) => [item.producto_id, Number(productos.find((p) => p.id === item.producto_id)?.stock_actual ?? 0)])
+      );
+
+      const compraId = await confirmarCompraSigo({
         empresaId,
         proveedorId,
-        items: validas.map(({ producto_id, cantidad, costo_unitario }) => ({ producto_id, cantidad, costo_unitario })),
+        items,
         fecha,
         tipoComprobante: tipo,
         numeroComprobante: numero,
         idempotencyKey: crypto.randomUUID(),
       });
+
+      const resultado = await verificarCompraSigo({ empresaId, compraId, items, stockAntes });
+      setUltimaConciliacion({ compraId, resultado });
       setLineas([nuevaLinea()]);
       setNumero("");
       await cargar();
@@ -117,6 +138,20 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
       </div>
 
       {error && <div className="panel"><p className="form-error" role="alert">{error}</p></div>}
+
+      {ultimaConciliacion && (
+        <div className="panel">
+          <h3>Conciliación de la última compra</h3>
+          <p><strong>Compra:</strong> {ultimaConciliacion.compraId}</p>
+          <p><strong>Estado:</strong> {ultimaConciliacion.resultado.estado}</p>
+          <p>{ultimaConciliacion.resultado.detalle}</p>
+          <p style={{ marginBottom: 0 }}>
+            {ultimaConciliacion.resultado.estado === "OK"
+              ? "La recepción quedó verificada contra detalle, stock y último costo."
+              : "No repitas la compra: revisá el estado antes de volver a confirmar para evitar duplicados."}
+          </p>
+        </div>
+      )}
 
       <div className="panel">
         <h3>Alta rápida de proveedor</h3>
