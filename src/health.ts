@@ -35,8 +35,9 @@ function clasificarError(message: string): Pick<SaludModuloSigo, "estado" | "det
   if (
     texto.includes("does not exist") ||
     texto.includes("could not find the table") ||
+    texto.includes("could not find the function") ||
     texto.includes("schema cache") ||
-    texto.includes("relation") && texto.includes("does not exist")
+    (texto.includes("relation") && texto.includes("does not exist"))
   ) {
     return {
       estado: "no_disponible",
@@ -48,7 +49,8 @@ function clasificarError(message: string): Pick<SaludModuloSigo, "estado" | "det
     texto.includes("permission denied") ||
     texto.includes("row-level security") ||
     texto.includes("not authorized") ||
-    texto.includes("jwt")
+    texto.includes("jwt") ||
+    texto.includes("auth_required")
   ) {
     return {
       estado: "bloqueado",
@@ -81,10 +83,31 @@ async function probarTabla(probe: Probe, empresaId: string): Promise<SaludModulo
   return { modulo: probe.modulo, ...clasificacion };
 }
 
+async function probarCodigoBarras(empresaId: string): Promise<SaludModuloSigo> {
+  const { error } = await supabase.rpc("buscar_producto_codigo_sigo", {
+    p_empresa_id: empresaId,
+    p_codigo: "__SIGO_HEALTHCHECK_NO_MATCH__",
+  });
+
+  if (!error) {
+    return {
+      modulo: "Código de barras",
+      estado: "operativo",
+      detalle: "Lookup tenant-aware disponible para pistola, ingreso manual y cámara.",
+    };
+  }
+
+  const clasificacion = clasificarError(error.message);
+  return { modulo: "Código de barras", ...clasificacion };
+}
+
 export async function verificarSaludOperativaSigo(empresaId: string): Promise<SaludOperativaSigo> {
   if (!empresaId) throw new Error("No hay una empresa activa para validar.");
 
-  const modulos = await Promise.all(probes.map((probe) => probarTabla(probe, empresaId)));
+  const modulos = await Promise.all([
+    ...probes.map((probe) => probarTabla(probe, empresaId)),
+    probarCodigoBarras(empresaId),
+  ]);
   const operativos = modulos.filter((modulo) => modulo.estado === "operativo").length;
   const noDisponibles = modulos.filter((modulo) => modulo.estado === "no_disponible").length;
 
