@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CSSProperties, FormEvent } from "react";
+import type { CSSProperties } from "react";
 import {
   cargarMisEmpresas,
-  crearEmpresaSigo,
   guardarEmpresaActiva,
   leerEmpresaActivaGuardada,
   resolverEmpresaActiva,
@@ -10,37 +9,24 @@ import {
 } from "./tenant";
 import { supabase } from "./supabase";
 
+type TenantState = "loading" | "ready" | "empty" | "error";
+
 type Props = {
   value?: string | null;
   onChange: (empresa: EmpresaOperativa | null) => void;
+  onStateChange?: (state: TenantState) => void;
   disabled?: boolean;
 };
 
-function mensajeError(error: unknown): string {
-  if (error instanceof Error) {
-    if (error.message === "TENANT_ROLE_INVALID") {
-      return "Tu membresía tiene un rol no reconocido. Un administrador debe corregirlo antes de operar.";
-    }
-    if (error.message === "AUTH_REQUIRED") {
-      return "La sesión ya no es válida. Volvé a ingresar para cargar tus empresas.";
-    }
-    if (error.message) return error.message;
-  }
-  return "No se pudieron cargar tus empresas.";
-}
-
-export default function TenantSwitcher({ value, onChange, disabled = false }: Props) {
+export default function TenantSwitcher({ value, onChange, onStateChange, disabled = false }: Props) {
   const [empresas, setEmpresas] = useState<EmpresaOperativa[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [detalleError, setDetalleError] = useState("");
-  const [nombreNuevaEmpresa, setNombreNuevaEmpresa] = useState("");
-  const [creando, setCreando] = useState(false);
+  const [error, setError] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError("");
-    setDetalleError("");
+    setError(false);
+    onStateChange?.("loading");
 
     try {
       const disponibles = await cargarMisEmpresas();
@@ -48,23 +34,22 @@ export default function TenantSwitcher({ value, onChange, disabled = false }: Pr
       const preferida = value ?? leerEmpresaActivaGuardada();
       const activa = resolverEmpresaActiva(disponibles, preferida);
       onChange(activa);
+      onStateChange?.(disponibles.length ? "ready" : "empty");
     } catch (e) {
       console.error(e);
       setEmpresas([]);
-      setError("No se pudieron cargar tus empresas.");
-      setDetalleError(mensajeError(e));
+      setError(true);
       onChange(null);
+      onStateChange?.("error");
     } finally {
       setLoading(false);
     }
-  }, [onChange, value]);
+  }, [onChange, onStateChange, value]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  // Cuando el usuario vuelve a SIGO desde otra pestaña o después de que un admin
-  // cambió su membresía, refrescamos el tenant sin obligarlo a cerrar sesión.
   useEffect(() => {
     const refrescarAlVolver = () => {
       if (document.visibilityState === "visible") void load();
@@ -89,89 +74,7 @@ export default function TenantSwitcher({ value, onChange, disabled = false }: Pr
     await supabase.auth.signOut();
   }
 
-  async function crearEmpresa(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const nombre = nombreNuevaEmpresa.trim();
-    if (!nombre || creando) return;
-
-    setCreando(true);
-    setError("");
-    setDetalleError("");
-
-    try {
-      const empresaId = await crearEmpresaSigo(nombre);
-      guardarEmpresaActiva(empresaId);
-      setNombreNuevaEmpresa("");
-      await load();
-    } catch (e) {
-      console.error(e);
-      setError("No se pudo crear la empresa.");
-      setDetalleError(mensajeError(e));
-    } finally {
-      setCreando(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <div aria-live="polite" style={shellStyle}>
-        <span style={eyebrowStyle}>Empresa activa</span>
-        <strong>Actualizando acceso…</strong>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div role="alert" style={{ ...shellStyle, borderColor: "rgba(185, 28, 28, .25)" }}>
-        <span style={eyebrowStyle}>Empresa activa</span>
-        <strong>{error}</strong>
-        {detalleError ? <small style={{ opacity: 0.72 }}>{detalleError}</small> : null}
-        <div style={buttonRowStyle}>
-          <button type="button" onClick={() => void load()} style={secondaryButtonStyle}>
-            Reintentar acceso
-          </button>
-          <button type="button" onClick={() => void cerrarSesion()} style={secondaryButtonStyle}>
-            Cambiar usuario
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (empresas.length === 0) {
-    return (
-      <div role="status" style={shellStyle}>
-        <span style={eyebrowStyle}>Empresa activa</span>
-        <strong>Creá tu primera empresa para entrar a SIGO</strong>
-        <small style={{ opacity: 0.72 }}>
-          La empresa queda asociada a tu usuario como propietario y mantiene separados los datos de cada organización.
-        </small>
-        <form onSubmit={crearEmpresa} style={createFormStyle}>
-          <input
-            value={nombreNuevaEmpresa}
-            onChange={(event) => setNombreNuevaEmpresa(event.target.value)}
-            placeholder="Nombre de la empresa"
-            aria-label="Nombre de la nueva empresa"
-            disabled={creando}
-            required
-            style={inputStyle}
-          />
-          <button type="submit" disabled={creando || !nombreNuevaEmpresa.trim()} style={primaryButtonStyle}>
-            {creando ? "Creando…" : "Crear y entrar"}
-          </button>
-        </form>
-        <div style={buttonRowStyle}>
-          <button type="button" onClick={() => void load()} style={secondaryButtonStyle}>
-            Actualizar acceso
-          </button>
-          <button type="button" onClick={() => void cerrarSesion()} style={secondaryButtonStyle}>
-            Ingresar con otro usuario
-          </button>
-        </div>
-      </div>
-    );
-  }
+  if (loading || error || empresas.length === 0) return null;
 
   return (
     <div style={shellStyle}>
@@ -191,17 +94,12 @@ export default function TenantSwitcher({ value, onChange, disabled = false }: Pr
           ))}
         </select>
       </label>
-      <small style={{ opacity: 0.72 }}>
-        {empresas.length === 1
-          ? "Tu operación está limitada a esta empresa."
-          : "Los datos y permisos cambian con la empresa seleccionada."}
-      </small>
       <div style={buttonRowStyle}>
         <button type="button" disabled={disabled} onClick={() => void load()} style={secondaryButtonStyle}>
-          Actualizar acceso
+          Actualizar
         </button>
         <button type="button" disabled={disabled} onClick={() => void cerrarSesion()} style={secondaryButtonStyle}>
-          Cerrar sesión
+          Salir
         </button>
       </div>
     </div>
@@ -237,29 +135,6 @@ const selectStyle: CSSProperties = {
   font: "inherit",
   fontWeight: 700,
   background: "transparent",
-  cursor: "pointer",
-};
-
-const createFormStyle: CSSProperties = {
-  display: "grid",
-  gap: 8,
-  marginTop: 4,
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  border: "1px solid rgba(15, 23, 42, .16)",
-  borderRadius: 10,
-  padding: "9px 10px",
-  font: "inherit",
-};
-
-const primaryButtonStyle: CSSProperties = {
-  border: 0,
-  borderRadius: 10,
-  padding: "9px 12px",
-  fontWeight: 800,
   cursor: "pointer",
 };
 
