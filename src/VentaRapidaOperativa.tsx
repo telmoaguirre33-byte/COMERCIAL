@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import BarcodeScanner from "./BarcodeScanner";
 import type { BarcodeProduct } from "./barcode";
+import { listarClientesSigo, type ClienteSigo } from "./clientes";
 import { confirmarVentaSigo, type MedioPagoSigo } from "./ventas";
 
 type ItemVenta = { producto: BarcodeProduct; cantidad: number };
@@ -13,10 +14,36 @@ function nuevaClaveVenta() {
 export default function VentaRapidaOperativa({ empresaId }: { empresaId: string }) {
   const [items, setItems] = useState<ItemVenta[]>([]);
   const [medioPago, setMedioPago] = useState<MedioPagoSigo>("efectivo");
+  const [clientes, setClientes] = useState<ClienteSigo[]>([]);
+  const [clienteId, setClienteId] = useState("");
+  const [clientesError, setClientesError] = useState("");
   const [confirmando, setConfirmando] = useState(false);
   const [error, setError] = useState("");
   const [exito, setExito] = useState("");
   const [idempotencyKey, setIdempotencyKey] = useState(nuevaClaveVenta);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function cargarClientes() {
+      setClientesError("");
+      try {
+        const data = await listarClientesSigo(empresaId);
+        if (!cancelled) setClientes(data);
+      } catch (err) {
+        if (!cancelled) {
+          setClientes([]);
+          setClientesError(err instanceof Error ? err.message : "No se pudieron cargar los clientes.");
+        }
+      }
+    }
+    void cargarClientes();
+    return () => { cancelled = true; };
+  }, [empresaId]);
+
+  const clienteSeleccionado = useMemo(
+    () => clientes.find((cliente) => cliente.id === clienteId) ?? null,
+    [clientes, clienteId],
+  );
 
   function agregar(producto: BarcodeProduct) {
     if (confirmando) return;
@@ -64,6 +91,8 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
     setItems([]);
     setError("");
     setExito("");
+    setClienteId("");
+    setMedioPago("efectivo");
     setIdempotencyKey(nuevaClaveVenta());
   }
 
@@ -72,8 +101,13 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
     [items],
   );
 
+  const superaLimite = medioPago === "cuenta_corriente"
+    && clienteSeleccionado?.limite_credito != null
+    && Number(clienteSeleccionado.saldo_actual || 0) + total > Number(clienteSeleccionado.limite_credito);
+
   const puedeConfirmar = items.length > 0
-    && medioPago !== "cuenta_corriente"
+    && (medioPago !== "cuenta_corriente" || Boolean(clienteId))
+    && !superaLimite
     && items.every((item) => item.producto.precio_venta != null && item.producto.stock_actual != null && item.cantidad <= Number(item.producto.stock_actual));
 
   async function confirmar() {
@@ -85,12 +119,17 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
       const resultado = await confirmarVentaSigo({
         empresaId,
         medioPago,
+        clienteId: clienteId || null,
         idempotencyKey,
         items: items.map((item) => ({ productoId: item.producto.id, cantidad: item.cantidad })),
       });
       setExito(`Venta confirmada · ${resultado.ventaId.slice(0, 8).toUpperCase()} · Total $ ${total.toLocaleString("es-AR")}`);
       setItems([]);
+      setClienteId("");
+      setMedioPago("efectivo");
       setIdempotencyKey(nuevaClaveVenta());
+      const data = await listarClientesSigo(empresaId);
+      setClientes(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo confirmar la venta.");
     } finally {
@@ -103,7 +142,7 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
       <div className="page-header">
         <div>
           <h2>Venta rápida</h2>
-          <p>Pistola USB/Bluetooth, ingreso manual o cámara celular. Confirmación transaccional con descuento de stock y registro de caja.</p>
+          <p>Pistola USB/Bluetooth, ingreso manual o cámara celular. Confirmación transaccional con descuento de stock, caja y cuenta corriente por cliente.</p>
         </div>
         <button className="admin-button" disabled={items.length === 0 || confirmando} onClick={vaciar}>Vaciar</button>
       </div>
@@ -115,23 +154,44 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
 
       <div className="panel">
         <div className="page-header">
-          <div><h3>Carrito</h3><p>El precio final y el stock se vuelven a validar en backend al confirmar.</p></div>
-          <label className="form-group" style={{ minWidth: 190 }}>
-            <span>Medio de pago</span>
-            <select value={medioPago} disabled={confirmando} onChange={(e) => setMedioPago(e.target.value as MedioPagoSigo)}>
-              <option value="efectivo">Efectivo</option>
-              <option value="debito">Débito</option>
-              <option value="credito">Crédito</option>
-              <option value="transferencia">Transferencia</option>
-              <option value="cuenta_corriente" disabled>Cuenta corriente · requiere cliente</option>
-              <option value="otro">Otro</option>
-            </select>
-          </label>
+          <div><h3>Carrito</h3><p>El precio final, stock, cliente y límite de crédito se vuelven a validar en backend al confirmar.</p></div>
+          <div className="topbar-actions" style={{ alignItems: "end" }}>
+            <label className="form-group" style={{ minWidth: 210 }}>
+              <span>Cliente</span>
+              <select value={clienteId} disabled={confirmando} onChange={(e) => setClienteId(e.target.value)}>
+                <option value="">Consumidor final / sin cliente</option>
+                {clientes.map((cliente) => (
+                  <option key={cliente.id} value={cliente.id}>
+                    {cliente.nombre} · saldo $ {Number(cliente.saldo_actual || 0).toLocaleString("es-AR")}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-group" style={{ minWidth: 190 }}>
+              <span>Medio de pago</span>
+              <select value={medioPago} disabled={confirmando} onChange={(e) => setMedioPago(e.target.value as MedioPagoSigo)}>
+                <option value="efectivo">Efectivo</option>
+                <option value="debito">Débito</option>
+                <option value="credito">Crédito</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="cuenta_corriente">Cuenta corriente</option>
+                <option value="otro">Otro</option>
+              </select>
+            </label>
+          </div>
         </div>
 
-        <p style={{ marginTop: 0, opacity: 0.72 }}>
-          Cuenta corriente queda bloqueada hasta asociar cliente y generar el saldo/deuda correspondiente. Así evitamos descontar stock sin registrar correctamente el cobro pendiente.
-        </p>
+        {clientesError && <p className="form-error" role="alert">Clientes: {clientesError}</p>}
+        {medioPago === "cuenta_corriente" && !clienteId && (
+          <p className="form-error" role="alert">Seleccioná un cliente para vender en cuenta corriente.</p>
+        )}
+        {medioPago === "cuenta_corriente" && clienteSeleccionado && (
+          <p style={{ marginTop: 0, opacity: 0.78 }}>
+            {clienteSeleccionado.nombre} · saldo actual $ {Number(clienteSeleccionado.saldo_actual || 0).toLocaleString("es-AR")}
+            {clienteSeleccionado.limite_credito == null ? " · sin límite configurado" : ` · límite $ ${Number(clienteSeleccionado.limite_credito).toLocaleString("es-AR")}`}
+          </p>
+        )}
+        {superaLimite && <p className="form-error" role="alert">La operación supera el límite de crédito configurado para el cliente.</p>}
 
         <div className="table-wrapper">
           <table className="products-table">
