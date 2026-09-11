@@ -17,12 +17,48 @@ export type EmpresaOperativa = {
 };
 
 const ACTIVE_COMPANY_KEY = "sigo.activeEmpresaId";
+const ROLES_VALIDOS = new Set<RolEmpresaSigo>([
+  "owner",
+  "admin",
+  "administrative",
+  "seller",
+  "warehouse",
+  "client",
+]);
+
+function normalizarRol(valor: unknown): RolEmpresaSigo {
+  if (typeof valor === "string" && ROLES_VALIDOS.has(valor as RolEmpresaSigo)) {
+    return valor as RolEmpresaSigo;
+  }
+  // Fallar cerrado: un rol desconocido nunca debe transformarse implícitamente
+  // en un perfil con permisos dentro de una empresa.
+  throw new Error("TENANT_ROLE_INVALID");
+}
 
 function normalizarEmpresa(empresa: Omit<EmpresaOperativa, "empresa_nombre">): EmpresaOperativa {
   return {
     ...empresa,
     empresa_nombre: empresa.nombre || empresa.razon_social || "Empresa",
   };
+}
+
+function deduplicarEmpresas(empresas: EmpresaOperativa[]): EmpresaOperativa[] {
+  const porId = new Map<string, EmpresaOperativa>();
+  for (const empresa of empresas) {
+    if (!empresa.empresa_id) continue;
+    if (!porId.has(empresa.empresa_id)) porId.set(empresa.empresa_id, empresa);
+  }
+  return Array.from(porId.values());
+}
+
+function rpcNoDisponible(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  const mensaje = (error.message ?? "").toLowerCase();
+  return (
+    error.code === "PGRST202" ||
+    error.code === "42883" ||
+    (mensaje.includes("mis_empresas_sigo") && (mensaje.includes("not found") || mensaje.includes("does not exist")))
+  );
 }
 
 async function cargarEmpresasPorMembresia(): Promise<EmpresaOperativa[]> {
@@ -43,7 +79,7 @@ async function cargarEmpresasPorMembresia(): Promise<EmpresaOperativa[]> {
 
   if (error) throw error;
 
-  return (data ?? []).flatMap((fila: any) => {
+  const normalizadas = (data ?? []).flatMap((fila: any) => {
     const empresa = Array.isArray(fila.empresas) ? fila.empresas[0] : fila.empresas;
     if (!empresa?.id) return [];
 
@@ -52,21 +88,34 @@ async function cargarEmpresasPorMembresia(): Promise<EmpresaOperativa[]> {
         empresa_id: empresa.id,
         nombre: empresa.nombre ?? "Empresa",
         razon_social: empresa.razon_social ?? null,
-        rol: fila.rol as RolEmpresaSigo,
+        rol: normalizarRol(fila.rol),
       }),
     ];
   });
+
+  return deduplicarEmpresas(normalizadas);
 }
 
 export async function cargarMisEmpresas(): Promise<EmpresaOperativa[]> {
   const { data, error } = await supabase.rpc("mis_empresas_sigo");
 
   if (!error) {
-    return ((data ?? []) as Array<Omit<EmpresaOperativa, "empresa_nombre">>).map(normalizarEmpresa);
+    const normalizadas = ((data ?? []) as Array<Record<string, unknown>>).map((fila) =>
+      normalizarEmpresa({
+        empresa_id: String(fila.empresa_id ?? ""),
+        nombre: String(fila.nombre ?? "Empresa"),
+        razon_social: typeof fila.razon_social === "string" ? fila.razon_social : null,
+        rol: normalizarRol(fila.rol),
+      }),
+    );
+    return deduplicarEmpresas(normalizadas);
   }
 
-  // Compatibilidad de despliegue: si la RPC todavía no fue aplicada en producción,
-  // usamos las mismas tablas protegidas por RLS. No amplía permisos ni salta el tenant.
+  // Compatibilidad de despliegue solamente cuando la RPC realmente no existe.
+  // Un error de permisos, autenticación o red debe fallar cerrado y hacerse visible;
+  // no se enmascara usando otra ruta de acceso a datos.
+  if (!rpcNoDisponible(error)) throw error;
+
   console.warn("mis_empresas_sigo no disponible; usando fallback RLS", error);
   return cargarEmpresasPorMembresia();
 }
