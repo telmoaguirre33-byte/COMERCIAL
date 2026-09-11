@@ -32,6 +32,11 @@ export type CompraItemInput = {
   costo_unitario: number;
 };
 
+export type VerificacionCompraSigo = {
+  estado: "OK" | "REVISAR" | "NO_VERIFICADO";
+  detalle: string;
+};
+
 export async function listarProveedoresSigo(empresaId: string): Promise<ProveedorSigo[]> {
   const { data, error } = await supabase
     .from("proveedores_sigo")
@@ -111,4 +116,71 @@ export async function confirmarCompraSigo(input: {
     throw error;
   }
   return String(data);
+}
+
+export async function verificarCompraSigo(input: {
+  empresaId: string;
+  compraId: string;
+  items: CompraItemInput[];
+  stockAntes: Record<string, number>;
+}): Promise<VerificacionCompraSigo> {
+  try {
+    const productoIds = [...new Set(input.items.map((item) => item.producto_id))];
+    const [{ data: compra, error: compraError }, { data: detalles, error: detalleError }, { data: productos, error: productoError }] = await Promise.all([
+      supabase
+        .from("compras_sigo")
+        .select("id,empresa_id,estado")
+        .eq("id", input.compraId)
+        .eq("empresa_id", input.empresaId)
+        .maybeSingle(),
+      supabase
+        .from("compra_items_sigo")
+        .select("producto_id,cantidad,costo_unitario")
+        .eq("compra_id", input.compraId)
+        .eq("empresa_id", input.empresaId),
+      supabase
+        .from("productos")
+        .select("id,empresa_id,stock_actual,costo_actual,costo_ultima_compra")
+        .eq("empresa_id", input.empresaId)
+        .in("id", productoIds),
+    ]);
+
+    if (compraError || detalleError || productoError) {
+      return { estado: "NO_VERIFICADO", detalle: "La compra fue confirmada, pero no se pudo completar la conciliación de stock." };
+    }
+    if (!compra || compra.estado !== "confirmada") {
+      return { estado: "REVISAR", detalle: "No aparece la cabecera confirmada de la compra en la empresa activa." };
+    }
+
+    const detalleMap = new Map((detalles ?? []).map((d) => [String(d.producto_id), d]));
+    const productoMap = new Map((productos ?? []).map((p) => [String(p.id), p]));
+
+    for (const item of input.items) {
+      const detalle = detalleMap.get(item.producto_id);
+      const producto = productoMap.get(item.producto_id);
+      if (!detalle || !producto) {
+        return { estado: "REVISAR", detalle: "Falta el detalle de compra o el producto conciliado." };
+      }
+
+      const cantidadDetalle = Number(detalle.cantidad ?? 0);
+      const costoDetalle = Number(detalle.costo_unitario ?? 0);
+      const stockEsperado = Number(input.stockAntes[item.producto_id] ?? 0) + Number(item.cantidad);
+      const stockActual = Number(producto.stock_actual ?? 0);
+      const costoActual = Number(producto.costo_actual ?? producto.costo_ultima_compra ?? 0);
+
+      if (Math.abs(cantidadDetalle - Number(item.cantidad)) > 0.0001 || Math.abs(costoDetalle - Number(item.costo_unitario)) > 0.0001) {
+        return { estado: "REVISAR", detalle: "El detalle grabado no coincide con cantidades/costos enviados." };
+      }
+      if (Math.abs(stockActual - stockEsperado) > 0.0001) {
+        return { estado: "REVISAR", detalle: `Stock inconsistente: esperado ${stockEsperado}, actual ${stockActual}.` };
+      }
+      if (Math.abs(costoActual - Number(item.costo_unitario)) > 0.0001) {
+        return { estado: "REVISAR", detalle: "El último costo del producto no coincide con la compra confirmada." };
+      }
+    }
+
+    return { estado: "OK", detalle: "Compra, detalle, stock y último costo conciliados correctamente." };
+  } catch {
+    return { estado: "NO_VERIFICADO", detalle: "La compra fue confirmada, pero la verificación posterior no pudo ejecutarse." };
+  }
 }
