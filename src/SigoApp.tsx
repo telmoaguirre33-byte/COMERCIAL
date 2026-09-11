@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { EmpresaOperativa } from "./tenant";
+import BarcodeScanner from "./BarcodeScanner";
+import type { BarcodeAction, BarcodeProduct } from "./barcode";
 import {
   eliminarProductoSigo,
   guardarProductoSigo,
@@ -67,23 +69,28 @@ export default function SigoApp({ empresa }: { empresa: EmpresaOperativa }) {
           </div>
         </header>
         <section className="content">
-          {section === "Inicio" && <Inicio empresa={empresa} onProductos={() => setSection("Productos")} />}
+          {section === "Inicio" && <Inicio empresa={empresa} onProductos={() => setSection("Productos")} onStock={() => setSection("Stock")} />}
           {section === "Productos" && <Productos empresaId={empresa.empresa_id} />}
-          {section !== "Inicio" && section !== "Productos" && <Pendiente title={section} />}
+          {section === "Stock" && <Stock empresaId={empresa.empresa_id} />}
+          {section === "Ventas" && <VentasRapidas empresaId={empresa.empresa_id} />}
+          {section !== "Inicio" && section !== "Productos" && section !== "Stock" && section !== "Ventas" && <Pendiente title={section} />}
         </section>
       </main>
     </div>
   );
 }
 
-function Inicio({ empresa, onProductos }: { empresa: EmpresaOperativa; onProductos: () => void }) {
+function Inicio({ empresa, onProductos, onStock }: { empresa: EmpresaOperativa; onProductos: () => void; onStock: () => void }) {
   return (
     <div className="welcome">
       <div>
         <h2>SIGO · {empresa.empresa_nombre}</h2>
-        <p>Operación protegida por empresa activa. Productos trabaja con aislamiento por tenant.</p>
+        <p>Operación protegida por empresa activa. Productos y stock trabajan con aislamiento por tenant.</p>
       </div>
-      <button className="primary-button" onClick={onProductos}>Abrir productos</button>
+      <div className="topbar-actions">
+        <button className="admin-button" onClick={onStock}>Ver stock</button>
+        <button className="primary-button" onClick={onProductos}>Abrir productos</button>
+      </div>
     </div>
   );
 }
@@ -99,6 +106,8 @@ function Productos({ empresaId }: { empresaId: string }) {
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
+  const [scanAction, setScanAction] = useState<BarcodeAction>("consultar");
+  const [scanResult, setScanResult] = useState<BarcodeProduct | null>(null);
 
   async function cargar() {
     setLoading(true);
@@ -150,6 +159,15 @@ function Productos({ empresaId }: { empresaId: string }) {
     setEditing(null);
     setForm(productoVacio);
     setFormError("");
+  }
+
+  function handleScan(producto: BarcodeProduct, action: BarcodeAction) {
+    setScanResult(producto);
+    setSearch(producto.codigo_barras || producto.codigo_interno || producto.nombre);
+    if (action === "editar") {
+      const original = productos.find((item) => item.id === producto.id);
+      if (original) abrirEdicion(original);
+    }
   }
 
   async function guardar(event: FormEvent<HTMLFormElement>) {
@@ -214,6 +232,15 @@ function Productos({ empresaId }: { empresaId: string }) {
           <button className="admin-button" onClick={() => void cargar()}>Actualizar</button>
           <button className="primary-button" onClick={abrirNuevo}>Nuevo producto</button>
         </div>
+      </div>
+
+      <div className="panel">
+        <h3>Buscar por código</h3>
+        <p>Pistola USB/Bluetooth, ingreso manual o cámara del celular.</p>
+        <BarcodeScanner empresaId={empresaId} action={scanAction} onActionChange={setScanAction} onProduct={handleScan} />
+        {scanResult && (
+          <p><strong>Encontrado:</strong> {scanResult.nombre} · Stock {scanResult.stock_actual ?? "restringido"} · Precio {scanResult.precio_venta == null ? "restringido" : `$ ${Number(scanResult.precio_venta).toLocaleString("es-AR")}`}</p>
+        )}
       </div>
 
       <div className="product-tools">
@@ -292,6 +319,122 @@ function Productos({ empresaId }: { empresaId: string }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function Stock({ empresaId }: { empresaId: string }) {
+  const [productos, setProductos] = useState<ProductoSigo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [soloCriticos, setSoloCriticos] = useState(false);
+  const [scanResult, setScanResult] = useState<BarcodeProduct | null>(null);
+
+  async function cargar() {
+    setLoading(true);
+    setError("");
+    try {
+      setProductos(await listarProductosSigo(empresaId));
+    } catch (err) {
+      setProductos([]);
+      setError(err instanceof Error ? err.message : "No se pudo cargar el stock");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void cargar();
+  }, [empresaId]);
+
+  const visibles = productos.filter((p) => p.stock_actual != null);
+  const criticos = visibles.filter((p) => p.stock_minimo != null && Number(p.stock_actual) <= Number(p.stock_minimo));
+  const sinStock = visibles.filter((p) => Number(p.stock_actual) <= 0);
+  const totalUnidades = visibles.reduce((total, p) => total + Number(p.stock_actual || 0), 0);
+  const filas = soloCriticos ? criticos : visibles;
+
+  return (
+    <div className="products-page">
+      <div className="page-header">
+        <div>
+          <h2>Stock</h2>
+          <p>Inventario operativo de la empresa activa. Los datos sensibles dependen de permisos.</p>
+        </div>
+        <button className="admin-button" onClick={() => void cargar()}>Actualizar</button>
+      </div>
+
+      <div className="stats-grid">
+        <div className="stat-card"><span>Productos con stock visible</span><strong>{visibles.length}</strong></div>
+        <div className="stat-card"><span>Unidades totales</span><strong>{totalUnidades.toLocaleString("es-AR")}</strong></div>
+        <div className="stat-card"><span>Stock crítico</span><strong>{criticos.length}</strong></div>
+        <div className="stat-card"><span>Sin stock</span><strong>{sinStock.length}</strong></div>
+      </div>
+
+      <div className="panel">
+        <h3>Consultar producto por código</h3>
+        <BarcodeScanner empresaId={empresaId} action="consultar" onProduct={(producto) => setScanResult(producto)} />
+        {scanResult && <p><strong>{scanResult.nombre}</strong> · Stock actual: {scanResult.stock_actual ?? "restringido"} · Mínimo: {scanResult.stock_minimo ?? "sin definir"}</p>}
+      </div>
+
+      <div className="panel">
+        <div className="page-header">
+          <div><h3>Detalle de stock</h3><p>Priorizá faltantes y productos bajo mínimo.</p></div>
+          <button className={soloCriticos ? "primary-button" : "admin-button"} onClick={() => setSoloCriticos((actual) => !actual)}>{soloCriticos ? "Ver todo" : "Solo críticos"}</button>
+        </div>
+        {loading && <p>Cargando stock…</p>}
+        {!loading && error && <p role="alert">{error}</p>}
+        {!loading && !error && (
+          <div className="table-wrapper">
+            <table className="products-table">
+              <thead><tr><th>Producto</th><th>Código</th><th>Stock actual</th><th>Mínimo</th><th>Estado</th></tr></thead>
+              <tbody>
+                {filas.map((p) => {
+                  const critico = p.stock_minimo != null && Number(p.stock_actual) <= Number(p.stock_minimo);
+                  return <tr key={p.id}><td><strong>{p.nombre}</strong></td><td>{p.codigo_barras || p.codigo_interno || "-"}</td><td>{p.stock_actual}</td><td>{p.stock_minimo ?? "-"}</td><td>{Number(p.stock_actual) <= 0 ? "SIN STOCK" : critico ? "CRÍTICO" : "OK"}</td></tr>;
+                })}
+              </tbody>
+            </table>
+            {filas.length === 0 && <div className="table-empty">No hay stock visible para mostrar.</div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function VentasRapidas({ empresaId }: { empresaId: string }) {
+  const [items, setItems] = useState<Array<{ producto: BarcodeProduct; cantidad: number }>>([]);
+
+  function agregar(producto: BarcodeProduct) {
+    setItems((actual) => {
+      const existente = actual.find((item) => item.producto.id === producto.id);
+      if (existente) return actual.map((item) => item.producto.id === producto.id ? { ...item, cantidad: item.cantidad + 1 } : item);
+      return [...actual, { producto, cantidad: 1 }];
+    });
+  }
+
+  const total = items.reduce((suma, item) => suma + (Number(item.producto.precio_venta || 0) * item.cantidad), 0);
+
+  return (
+    <div className="products-page">
+      <div className="page-header">
+        <div><h2>Venta rápida</h2><p>Armado de venta por pistola, código manual o cámara. La confirmación fiscal/caja todavía requiere integración final.</p></div>
+        <button className="admin-button" disabled={items.length === 0} onClick={() => setItems([])}>Vaciar</button>
+      </div>
+      <div className="panel">
+        <BarcodeScanner empresaId={empresaId} action="vender" onProduct={(producto) => agregar(producto)} />
+      </div>
+      <div className="panel">
+        <h3>Carrito</h3>
+        <div className="table-wrapper">
+          <table className="products-table">
+            <thead><tr><th>Producto</th><th>Cantidad</th><th>Precio</th><th>Subtotal</th></tr></thead>
+            <tbody>{items.map((item) => <tr key={item.producto.id}><td><strong>{item.producto.nombre}</strong></td><td>{item.cantidad}</td><td>{item.producto.precio_venta == null ? "Restringido" : `$ ${Number(item.producto.precio_venta).toLocaleString("es-AR")}`}</td><td>{item.producto.precio_venta == null ? "Restringido" : `$ ${(Number(item.producto.precio_venta) * item.cantidad).toLocaleString("es-AR")}`}</td></tr>)}</tbody>
+          </table>
+          {items.length === 0 && <div className="table-empty">Escaneá un producto para iniciar la venta.</div>}
+        </div>
+        <div className="form-actions"><strong>Total visible: $ {total.toLocaleString("es-AR")}</strong><button className="primary-button" disabled>Confirmar venta · integración pendiente</button></div>
+      </div>
     </div>
   );
 }
