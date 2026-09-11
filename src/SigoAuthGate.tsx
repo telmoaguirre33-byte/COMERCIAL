@@ -7,6 +7,8 @@ import "./auth.css";
 type Props = { children: ReactNode };
 type AuthMode = "login" | "register" | "recovery";
 
+const SIGO_PRODUCTION_URL = "https://comercial-lilac.vercel.app/";
+
 function mensajeAcceso(errorMessage: string) {
   const normalized = errorMessage.toLowerCase();
   if (normalized.includes("email not confirmed")) return "Tu cuenta todavía no está activada.";
@@ -105,7 +107,7 @@ export default function SigoAuthGate({ children }: Props) {
     const { data, error: signUpError } = await supabase.auth.signUp({
       email: normalizedEmail,
       password,
-      options: { emailRedirectTo: `${window.location.origin}${window.location.pathname}` },
+      options: { emailRedirectTo: SIGO_PRODUCTION_URL },
     });
 
     if (signUpError) {
@@ -148,7 +150,7 @@ export default function SigoAuthGate({ children }: Props) {
 
     setSubmitting(true);
     const { error: recoveryError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-      redirectTo: `${window.location.origin}${window.location.pathname}`,
+      redirectTo: SIGO_PRODUCTION_URL,
     });
     setSubmitting(false);
 
