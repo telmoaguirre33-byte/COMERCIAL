@@ -83,7 +83,7 @@ export default function SigoRoot() {
       setNuevaEmpresa("");
     } catch (error) {
       console.error("No se pudo completar el alta inicial de empresa", error);
-      setErrorEmpresa("No pudimos terminar la configuración. Tocá Reintentar acceso y volvé a probar.");
+      setErrorEmpresa("No pudimos terminar la configuración. Intentá nuevamente.");
     } finally {
       setCreandoEmpresa(false);
     }
@@ -133,6 +133,92 @@ export default function SigoRoot() {
           font-weight: 800;
           padding: 8px;
         }
+
+        .sigo-access-shell {
+          min-height: calc(100vh - 86px);
+          display: grid;
+          place-items: start center;
+          padding: 56px 20px 28px;
+          background:
+            radial-gradient(circle at top left, rgba(37, 99, 235, .08), transparent 34%),
+            linear-gradient(180deg, #f8fafc 0%, #f3f6fb 100%);
+        }
+        .sigo-access-card {
+          width: min(470px, 100%);
+          padding: 28px;
+          border: 1px solid rgba(148, 163, 184, .22);
+          border-radius: 24px;
+          background: rgba(255,255,255,.98);
+          box-shadow: 0 24px 60px rgba(15,23,42,.10);
+        }
+        .sigo-access-status {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 7px 10px;
+          border-radius: 999px;
+          background: #eff6ff;
+          color: #1d4ed8;
+          font-size: 12px;
+          font-weight: 800;
+          letter-spacing: .02em;
+        }
+        .sigo-access-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: #2563eb;
+          box-shadow: 0 0 0 4px rgba(37,99,235,.10);
+        }
+        .sigo-access-card h1 {
+          margin: 18px 0 10px;
+          color: #0f172a;
+          font-size: clamp(28px, 6vw, 38px);
+          line-height: 1.08;
+          letter-spacing: -.035em;
+        }
+        .sigo-access-card p {
+          margin: 0;
+          color: #64748b;
+          font-size: 15px;
+          line-height: 1.6;
+        }
+        .sigo-access-actions {
+          display: grid;
+          gap: 10px;
+          margin-top: 24px;
+        }
+        .sigo-access-primary {
+          min-height: 52px;
+          border: 0;
+          border-radius: 14px;
+          background: linear-gradient(135deg, #1d4ed8, #2563eb);
+          color: #fff;
+          font-size: 16px;
+          font-weight: 850;
+          box-shadow: 0 12px 24px rgba(37,99,235,.22);
+        }
+        .sigo-access-secondary {
+          min-height: 46px;
+          border: 1px solid #dbe3ee;
+          border-radius: 14px;
+          background: #fff;
+          color: #334155;
+          font-size: 14px;
+          font-weight: 750;
+        }
+        .sigo-access-foot {
+          margin-top: 18px;
+          padding-top: 16px;
+          border-top: 1px solid #eef2f7;
+          color: #94a3b8;
+          font-size: 12px;
+          line-height: 1.45;
+        }
+        @media (max-width: 560px) {
+          .sigo-access-shell { padding: 28px 16px; }
+          .sigo-access-card { padding: 24px 20px; border-radius: 20px; }
+        }
       `}</style>
 
       <div className="sigo-tenant-bar" role="region" aria-label="Contexto operativo SIGO">
@@ -169,17 +255,21 @@ export default function SigoRoot() {
           <p>Estamos cargando tu empresa y tus permisos.</p>
         </main>
       ) : tenantState === "error" ? (
-        <main className="sigo-onboarding-card" role="alert">
-          <h1>No pudimos completar el acceso</h1>
-          <p>No necesitás configurar nada técnico. Reintentá y SIGO volverá a cargar tu empresa.</p>
-          <div className="sigo-onboarding-actions">
-            <button className="primary-button" type="button" onClick={() => setTenantRetryKey((v) => v + 1)}>
-              Reintentar acceso
-            </button>
-            <button className="sigo-link-button" type="button" onClick={() => void cambiarUsuario()}>
-              Cambiar usuario
-            </button>
-          </div>
+        <main className="sigo-access-shell">
+          <section className="sigo-access-card" aria-live="polite">
+            <div className="sigo-access-status"><span className="sigo-access-dot" /> Acceso temporalmente interrumpido</div>
+            <h1>No pudimos sincronizar tu empresa</h1>
+            <p>SIGO está disponible, pero no pudo completar la carga de tu empresa en este momento. Podés intentar nuevamente o volver al ingreso.</p>
+            <div className="sigo-access-actions">
+              <button className="sigo-access-primary" type="button" onClick={() => setTenantRetryKey((v) => v + 1)}>
+                Intentar nuevamente
+              </button>
+              <button className="sigo-access-secondary" type="button" onClick={() => void cambiarUsuario()}>
+                Volver al ingreso
+              </button>
+            </div>
+            <div className="sigo-access-foot">Tus datos no se modificaron. La operación permanece protegida hasta completar la sincronización.</div>
+          </section>
         </main>
       ) : empresaActiva ? (
         workspace === "clientes" ? (
