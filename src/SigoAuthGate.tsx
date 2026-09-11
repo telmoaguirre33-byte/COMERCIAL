@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
@@ -9,11 +9,16 @@ type AuthMode = "login" | "register" | "recovery";
 
 const SIGO_PRODUCTION_URL = "https://comercial-lilac.vercel.app/";
 
+function esLimiteTemporal(errorMessage: string) {
+  const normalized = errorMessage.toLowerCase();
+  return normalized.includes("rate limit") || normalized.includes("too many requests");
+}
+
 function mensajeAcceso(errorMessage: string) {
   const normalized = errorMessage.toLowerCase();
-  if (normalized.includes("email not confirmed")) return "Tu cuenta todavía no está activada.";
+  if (normalized.includes("email not confirmed")) return "Tu cuenta necesita activación. Podés reenviar el correo desde acá.";
   if (normalized.includes("already registered") || normalized.includes("user already registered")) return "Ese email ya tiene una cuenta. Ingresá o usá Recuperar acceso.";
-  if (normalized.includes("rate limit") || normalized.includes("too many requests")) return "Hubo varios intentos seguidos. Esperá unos minutos y volvé a intentar.";
+  if (esLimiteTemporal(errorMessage)) return "El servicio de correo está temporalmente ocupado. Probá nuevamente en un minuto.";
   if (normalized.includes("banned") || normalized.includes("disabled")) return "Tu acceso está deshabilitado. Contactá al administrador de tu empresa.";
   if (normalized.includes("network") || normalized.includes("fetch")) return "No pudimos conectarnos. Revisá tu conexión a internet e intentá otra vez.";
   return "No pudimos completar la operación. Revisá los datos e intentá nuevamente.";
@@ -31,6 +36,8 @@ export default function SigoAuthGate({ children }: Props) {
   const [success, setSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [mode, setMode] = useState<AuthMode>("login");
+  const [puedeReenviarActivacion, setPuedeReenviarActivacion] = useState(false);
+  const requestInFlight = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -61,6 +68,7 @@ export default function SigoAuthGate({ children }: Props) {
   function limpiarMensajes() {
     setError("");
     setSuccess("");
+    setPuedeReenviarActivacion(false);
   }
 
   function cambiarModo(next: AuthMode) {
@@ -68,19 +76,35 @@ export default function SigoAuthGate({ children }: Props) {
     setMode(next);
   }
 
+  function comenzarSolicitud(): boolean {
+    if (requestInFlight.current) return false;
+    requestInFlight.current = true;
+    setSubmitting(true);
+    return true;
+  }
+
+  function terminarSolicitud() {
+    requestInFlight.current = false;
+    setSubmitting(false);
+  }
+
   async function iniciarSesion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting) return;
+    if (!comenzarSolicitud()) return;
     const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail || !password) return;
+    if (!normalizedEmail || !password) {
+      terminarSolicitud();
+      return;
+    }
 
-    setSubmitting(true);
     limpiarMensajes();
     const { data, error: loginError } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
-    setSubmitting(false);
+    terminarSolicitud();
 
     if (loginError || !data.session) {
-      setError(mensajeAcceso(loginError?.message ?? "unknown"));
+      const mensaje = loginError?.message ?? "unknown";
+      setError(mensajeAcceso(mensaje));
+      setPuedeReenviarActivacion(mensaje.toLowerCase().includes("email not confirmed"));
       return;
     }
     setEmail(normalizedEmail);
@@ -89,20 +113,21 @@ export default function SigoAuthGate({ children }: Props) {
 
   async function registrarme(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting) return;
+    if (!comenzarSolicitud()) return;
     const normalizedEmail = email.trim().toLowerCase();
     const nombre = empresaNombre.trim();
 
     if (!nombre) {
       setError("Ingresá el nombre de tu empresa o negocio.");
+      terminarSolicitud();
       return;
     }
     if (password.length < 8) {
       setError("La contraseña debe tener al menos 8 caracteres.");
+      terminarSolicitud();
       return;
     }
 
-    setSubmitting(true);
     limpiarMensajes();
     const { data, error: signUpError } = await supabase.auth.signUp({
       email: normalizedEmail,
@@ -111,14 +136,23 @@ export default function SigoAuthGate({ children }: Props) {
     });
 
     if (signUpError) {
-      setSubmitting(false);
+      terminarSolicitud();
+      if (esLimiteTemporal(signUpError.message)) {
+        setEmail(normalizedEmail);
+        setMode("login");
+        setPuedeReenviarActivacion(true);
+        setError("No pudimos enviar el correo de activación en este momento. Tu cuenta puede haber quedado creada; probá ingresar o reenviá la activación en un minuto.");
+        return;
+      }
       setError(mensajeAcceso(signUpError.message));
       return;
     }
 
     if (!data.session) {
-      setSubmitting(false);
-      setSuccess("Cuenta creada. Revisá tu correo para activarla y después ingresá normalmente.");
+      terminarSolicitud();
+      setEmail(normalizedEmail);
+      setSuccess("Cuenta creada. Te enviamos un correo para activarla.");
+      setPuedeReenviarActivacion(true);
       setMode("login");
       return;
     }
@@ -128,7 +162,7 @@ export default function SigoAuthGate({ children }: Props) {
       p_razon_social: null,
       p_cuit: null,
     });
-    setSubmitting(false);
+    terminarSolicitud();
 
     if (empresaError) {
       setError("La cuenta se creó, pero no pudimos terminar el alta de la empresa. Volvé a intentar en unos minutos.");
@@ -140,6 +174,26 @@ export default function SigoAuthGate({ children }: Props) {
     setSession(data.session);
   }
 
+  async function reenviarActivacion() {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !comenzarSolicitud()) return;
+    setError("");
+    setSuccess("");
+
+    const { error: resendError } = await supabase.auth.resend({
+      type: "signup",
+      email: normalizedEmail,
+      options: { emailRedirectTo: SIGO_PRODUCTION_URL },
+    });
+    terminarSolicitud();
+
+    if (resendError) {
+      setError(mensajeAcceso(resendError.message));
+      return;
+    }
+    setSuccess("Te reenviamos el correo de activación.");
+  }
+
   async function recuperarAcceso() {
     const normalizedEmail = email.trim().toLowerCase();
     limpiarMensajes();
@@ -147,12 +201,12 @@ export default function SigoAuthGate({ children }: Props) {
       setError("Ingresá tu email para recuperar el acceso.");
       return;
     }
+    if (!comenzarSolicitud()) return;
 
-    setSubmitting(true);
     const { error: recoveryError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
       redirectTo: SIGO_PRODUCTION_URL,
     });
-    setSubmitting(false);
+    terminarSolicitud();
 
     if (recoveryError) {
       setError(mensajeAcceso(recoveryError.message));
@@ -163,16 +217,16 @@ export default function SigoAuthGate({ children }: Props) {
 
   async function guardarNuevaPassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting) return;
+    if (!comenzarSolicitud()) return;
     limpiarMensajes();
     if (newPassword.length < 8) {
       setError("La nueva contraseña debe tener al menos 8 caracteres.");
+      terminarSolicitud();
       return;
     }
 
-    setSubmitting(true);
     const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
-    setSubmitting(false);
+    terminarSolicitud();
     if (updateError) {
       setError("No pudimos guardar la nueva contraseña. Volvé a abrir el enlace recibido e intentá otra vez.");
       return;
@@ -247,6 +301,7 @@ export default function SigoAuthGate({ children }: Props) {
               {error ? <div className="sigo-auth-error" role="alert">{error}</div> : null}
               {success ? <div className="sigo-auth-success" role="status">{success}</div> : null}
               <button className="sigo-auth-submit" type="submit" disabled={submitting}>{submitting ? "Ingresando…" : "Ingresar a SIGO"}</button>
+              {puedeReenviarActivacion ? <button className="sigo-auth-secondary" type="button" disabled={submitting} onClick={() => void reenviarActivacion()}>Reenviar activación</button> : null}
               <button className="sigo-auth-secondary" type="button" disabled={submitting} onClick={() => cambiarModo("register")}>Crear cuenta</button>
               <button className="sigo-auth-secondary" type="button" disabled={submitting} onClick={() => void recuperarAcceso()}>Recuperar acceso</button>
             </form>
