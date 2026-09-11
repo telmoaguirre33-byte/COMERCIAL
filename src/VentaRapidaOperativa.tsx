@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import BarcodeScanner from "./BarcodeScanner";
 import type { BarcodeProduct } from "./barcode";
 import { listarClientesSigo, type ClienteSigo } from "./clientes";
-import { confirmarVentaSigo, type MedioPagoSigo } from "./ventas";
+import {
+  confirmarVentaSigo,
+  listarVentasRecientesSigo,
+  type MedioPagoSigo,
+  type VentaRecienteSigo,
+} from "./ventas";
 
 type ItemVenta = { producto: BarcodeProduct; cantidad: number };
 
@@ -11,20 +16,45 @@ function nuevaClaveVenta() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function etiquetaMedio(medio: MedioPagoSigo) {
+  const etiquetas: Record<MedioPagoSigo, string> = {
+    efectivo: "Efectivo",
+    debito: "Débito",
+    credito: "Crédito",
+    transferencia: "Transferencia",
+    cuenta_corriente: "Cuenta corriente",
+    otro: "Otro",
+  };
+  return etiquetas[medio];
+}
+
 export default function VentaRapidaOperativa({ empresaId }: { empresaId: string }) {
   const [items, setItems] = useState<ItemVenta[]>([]);
   const [medioPago, setMedioPago] = useState<MedioPagoSigo>("efectivo");
   const [clientes, setClientes] = useState<ClienteSigo[]>([]);
   const [clienteId, setClienteId] = useState("");
   const [clientesError, setClientesError] = useState("");
+  const [ventasRecientes, setVentasRecientes] = useState<VentaRecienteSigo[]>([]);
+  const [ventasError, setVentasError] = useState("");
   const [confirmando, setConfirmando] = useState(false);
   const [error, setError] = useState("");
   const [exito, setExito] = useState("");
+  const [advertencia, setAdvertencia] = useState("");
   const [idempotencyKey, setIdempotencyKey] = useState(nuevaClaveVenta);
+
+  async function cargarVentasRecientes() {
+    setVentasError("");
+    try {
+      setVentasRecientes(await listarVentasRecientesSigo(empresaId, 8));
+    } catch (err) {
+      setVentasRecientes([]);
+      setVentasError(err instanceof Error ? err.message : "No se pudieron verificar las ventas recientes.");
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
-    async function cargarClientes() {
+    async function cargar() {
       setClientesError("");
       try {
         const data = await listarClientesSigo(empresaId);
@@ -35,9 +65,12 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
           setClientesError(err instanceof Error ? err.message : "No se pudieron cargar los clientes.");
         }
       }
+      if (!cancelled) await cargarVentasRecientes();
     }
-    void cargarClientes();
+    void cargar();
     return () => { cancelled = true; };
+    // cargarVentasRecientes depende únicamente del mismo empresaId del efecto.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresaId]);
 
   const clienteSeleccionado = useMemo(
@@ -49,6 +82,7 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
     if (confirmando) return;
     setError("");
     setExito("");
+    setAdvertencia("");
     if (producto.precio_venta == null) {
       setError(`${producto.nombre}: no tiene precio de venta habilitado.`);
       return;
@@ -91,6 +125,7 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
     setItems([]);
     setError("");
     setExito("");
+    setAdvertencia("");
     setClienteId("");
     setMedioPago("efectivo");
     setIdempotencyKey(nuevaClaveVenta());
@@ -115,6 +150,7 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
     setConfirmando(true);
     setError("");
     setExito("");
+    setAdvertencia("");
     try {
       const resultado = await confirmarVentaSigo({
         empresaId,
@@ -124,11 +160,18 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
         items: items.map((item) => ({ productoId: item.producto.id, cantidad: item.cantidad })),
       });
       setExito(`Venta confirmada · ${resultado.ventaId.slice(0, 8).toUpperCase()} · Total $ ${total.toLocaleString("es-AR")}`);
+      if (resultado.integridad !== "ok") {
+        setAdvertencia(
+          resultado.integridad === "revisar"
+            ? "La venta quedó registrada, pero no se pudo conciliar su movimiento de Caja/Cuenta Corriente. NO repitas la venta: revisá el estado operativo o Informes."
+            : "La venta quedó registrada, pero la conciliación automática no pudo verificarse. NO repitas la venta hasta revisar Ventas/Informes.",
+        );
+      }
       setItems([]);
       setClienteId("");
       setMedioPago("efectivo");
       setIdempotencyKey(nuevaClaveVenta());
-      const data = await listarClientesSigo(empresaId);
+      const [data] = await Promise.all([listarClientesSigo(empresaId), cargarVentasRecientes()]);
       setClientes(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo confirmar la venta.");
@@ -219,12 +262,45 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
 
         {error && <p className="form-error" role="alert">{error}</p>}
         {exito && <p role="status"><strong>{exito}</strong></p>}
+        {advertencia && <p className="form-error" role="alert"><strong>{advertencia}</strong></p>}
 
         <div className="form-actions">
           <strong>Total: $ {total.toLocaleString("es-AR")}</strong>
           <button className="primary-button" disabled={!puedeConfirmar || confirmando} onClick={() => void confirmar()}>
             {confirmando ? "Confirmando…" : "Confirmar venta"}
           </button>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="page-header">
+          <div>
+            <h3>Últimas ventas y conciliación</h3>
+            <p>Control inmediato de que cada venta tenga su ingreso de Caja o su deuda en Cuenta Corriente.</p>
+          </div>
+          <button className="admin-button" disabled={confirmando} onClick={() => void cargarVentasRecientes()}>Actualizar</button>
+        </div>
+        {ventasError && <p className="form-error" role="alert">Ventas: {ventasError}</p>}
+        <div className="table-wrapper">
+          <table className="products-table">
+            <thead><tr><th>Venta</th><th>Hora</th><th>Medio</th><th>Total</th><th>Conciliación</th></tr></thead>
+            <tbody>
+              {ventasRecientes.map((venta) => (
+                <tr key={venta.id}>
+                  <td><strong>{venta.numero ? `#${venta.numero}` : venta.id.slice(0, 8).toUpperCase()}</strong></td>
+                  <td>{new Date(venta.createdAt).toLocaleString("es-AR")}</td>
+                  <td>{etiquetaMedio(venta.medioPago)}</td>
+                  <td>$ {venta.total.toLocaleString("es-AR")}</td>
+                  <td>
+                    <strong>
+                      {venta.integridad === "ok" ? "OK" : venta.integridad === "revisar" ? "REVISAR" : "NO VERIFICADO"}
+                    </strong>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {ventasRecientes.length === 0 && !ventasError && <div className="table-empty">Todavía no hay ventas recientes para esta empresa.</div>}
         </div>
       </div>
     </div>
