@@ -4,7 +4,12 @@ import ComprasOperativas from "./ComprasOperativas";
 import InformesOperativos from "./InformesOperativos";
 import SigoApp from "./SigoApp";
 import TenantSwitcher from "./TenantSwitcher";
-import type { EmpresaOperativa } from "./tenant";
+import {
+  cargarMisEmpresas,
+  crearEmpresaSigo,
+  resolverEmpresaActiva,
+  type EmpresaOperativa,
+} from "./tenant";
 import {
   etiquetaRol,
   type SigoWorkspace,
@@ -24,6 +29,9 @@ export default function SigoRoot() {
   const [empresaActiva, setEmpresaActiva] = useState<EmpresaOperativa | null>(null);
   const [tenantReady, setTenantReady] = useState(false);
   const [workspace, setWorkspace] = useState<SigoWorkspace>("operacion");
+  const [nuevaEmpresa, setNuevaEmpresa] = useState("");
+  const [creandoEmpresa, setCreandoEmpresa] = useState(false);
+  const [errorEmpresa, setErrorEmpresa] = useState("");
 
   const permitidos = useMemo(
     () => (empresaActiva ? workspacesPermitidos(empresaActiva.rol) : []),
@@ -48,6 +56,33 @@ export default function SigoRoot() {
     setWorkspace(destino);
   }
 
+  async function crearPrimeraEmpresa(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (creandoEmpresa) return;
+    const nombre = nuevaEmpresa.trim();
+    if (!nombre) {
+      setErrorEmpresa("Ingresá el nombre de tu empresa o negocio.");
+      return;
+    }
+
+    setCreandoEmpresa(true);
+    setErrorEmpresa("");
+    try {
+      const empresaId = await crearEmpresaSigo(nombre);
+      const empresas = await cargarMisEmpresas();
+      const creada = resolverEmpresaActiva(empresas, empresaId);
+      if (!creada) throw new Error("EMPRESA_CREATED_NOT_VISIBLE");
+      setEmpresaActiva(creada);
+      setWorkspace(workspaceInicial(creada.rol));
+      setNuevaEmpresa("");
+    } catch (error) {
+      console.error("No se pudo completar el alta inicial de empresa", error);
+      setErrorEmpresa("No pudimos crear la empresa todavía. Reintentá en unos segundos.");
+    } finally {
+      setCreandoEmpresa(false);
+    }
+  }
+
   return (
     <div className="sigo-root">
       <style>{`
@@ -64,6 +99,26 @@ export default function SigoRoot() {
         .sigo-role-seller .welcome .topbar-actions { display: none; }
 
         .sigo-role-warehouse .sidebar .menu > button:nth-child(3) { display: none; }
+
+        .sigo-onboarding-card {
+          width: min(520px, calc(100% - 32px));
+          margin: 64px auto;
+          padding: 28px;
+          border-radius: 22px;
+          background: #fff;
+          box-shadow: 0 18px 50px rgba(15, 23, 42, .12);
+        }
+        .sigo-onboarding-card h1 { margin: 0 0 8px; }
+        .sigo-onboarding-card p { color: #64748b; line-height: 1.5; }
+        .sigo-onboarding-card form { display: grid; gap: 14px; margin-top: 20px; }
+        .sigo-onboarding-card input {
+          min-height: 50px;
+          padding: 12px 14px;
+          border: 1px solid #dbe3ee;
+          border-radius: 14px;
+          font-size: 16px;
+        }
+        .sigo-onboarding-error { color: #b91c1c; font-size: 13px; }
       `}</style>
 
       <div className="sigo-tenant-bar" role="region" aria-label="Contexto operativo SIGO">
@@ -107,9 +162,23 @@ export default function SigoRoot() {
           </main>
         )
       ) : (
-        <main className="sigo-tenant-state" role="alert">
-          <h1>SIGO necesita una empresa activa</h1>
-          <p>Para proteger productos, stock, ventas y clientes, la operación queda bloqueada hasta que el usuario tenga una membresía activa en una empresa.</p>
+        <main className="sigo-onboarding-card">
+          <h1>Configurá tu empresa</h1>
+          <p>Tu cuenta ya está activa. Creá tu primera empresa para empezar a trabajar en SIGO como administrador principal.</p>
+          <form onSubmit={crearPrimeraEmpresa}>
+            <input
+              aria-label="Nombre de la empresa"
+              placeholder="Nombre de la empresa o negocio"
+              value={nuevaEmpresa}
+              onChange={(event) => setNuevaEmpresa(event.target.value)}
+              autoComplete="organization"
+              required
+            />
+            {errorEmpresa ? <div className="sigo-onboarding-error" role="alert">{errorEmpresa}</div> : null}
+            <button className="primary-button" type="submit" disabled={creandoEmpresa}>
+              {creandoEmpresa ? "Creando empresa…" : "Crear empresa y continuar"}
+            </button>
+          </form>
         </main>
       )}
     </div>
