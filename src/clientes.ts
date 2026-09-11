@@ -26,9 +26,29 @@ export type ClienteInput = {
   limiteCredito?: number | null;
 };
 
+export type MedioCobroSigo = "efectivo" | "debito" | "credito" | "transferencia" | "otro";
+
 function texto(valor?: string | null) {
   const limpio = valor?.trim();
   return limpio ? limpio : null;
+}
+
+function mensajeCobro(error: unknown): string {
+  const raw = error instanceof Error
+    ? error.message
+    : typeof error === "object" && error && "message" in error
+      ? String((error as { message?: unknown }).message ?? "")
+      : String(error ?? "");
+
+  if (raw.includes("PAYMENT_EXCEEDS_BALANCE")) return "El cobro no puede superar el saldo pendiente del cliente.";
+  if (raw.includes("CLIENT_WITHOUT_DEBT")) return "El cliente ya no tiene deuda pendiente.";
+  if (raw.includes("PAYMENT_AMOUNT_INVALID")) return "Ingresá un importe de cobro válido.";
+  if (raw.includes("PAYMENT_METHOD_INVALID")) return "Seleccioná un medio de cobro válido.";
+  if (raw.includes("CLIENT_NOT_FOUND")) return "El cliente ya no está disponible en esta empresa.";
+  if (raw.includes("CLIENTS_WRITE_FORBIDDEN")) return "Tu usuario no tiene permiso para registrar cobros de clientes.";
+  if (raw.includes("SALES_WRITE_FORBIDDEN")) return "Tu usuario no tiene permiso para registrar ingresos de caja.";
+  if (raw.includes("AUTH_REQUIRED")) return "La sesión venció. Volvé a ingresar a SIGO.";
+  return raw || "No se pudo registrar el cobro.";
 }
 
 export async function listarClientesSigo(empresaId: string): Promise<ClienteSigo[]> {
@@ -71,17 +91,22 @@ export async function registrarCobroClienteSigo(input: {
   empresaId: string;
   clienteId: string;
   importe: number;
+  medioPago: MedioCobroSigo;
   concepto?: string;
 }): Promise<string> {
+  if (!input.empresaId) throw new Error("Seleccioná una empresa activa.");
+  if (!input.clienteId) throw new Error("Seleccioná un cliente.");
   if (!Number.isFinite(input.importe) || input.importe <= 0) throw new Error("Ingresá un importe de cobro válido.");
 
-  const { data, error } = await supabase.rpc("registrar_cobro_cliente_sigo", {
+  const { data, error } = await supabase.rpc("registrar_cobro_cliente_sigo_v2", {
     p_empresa_id: input.empresaId,
     p_cliente_id: input.clienteId,
     p_importe: input.importe,
+    p_medio_pago: input.medioPago,
     p_concepto: input.concepto?.trim() || "Cobro cuenta corriente",
   });
 
-  if (error) throw error;
+  if (error) throw new Error(mensajeCobro(error));
+  if (!data) throw new Error("El cobro no devolvió comprobante. Verificá la cuenta antes de repetirlo.");
   return String(data);
 }
