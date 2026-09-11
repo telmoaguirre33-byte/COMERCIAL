@@ -1,9 +1,10 @@
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 
 type Props = {
-  children: React.ReactNode;
+  children: ReactNode;
 };
 
 export default function SigoAuthGate({ children }: Props) {
