@@ -19,6 +19,7 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
   const [idempotencyKey, setIdempotencyKey] = useState(nuevaClaveVenta);
 
   function agregar(producto: BarcodeProduct) {
+    if (confirmando) return;
     setError("");
     setExito("");
     if (producto.precio_venta == null) {
@@ -108,7 +109,7 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
 
       <div className="panel">
         <h3>Escanear producto</h3>
-        <BarcodeScanner empresaId={empresaId} action="vender" onProduct={agregar} disabled={confirmando} />
+        <BarcodeScanner empresaId={empresaId} action="vender" onProduct={agregar} />
       </div>
 
       <div className="panel">
