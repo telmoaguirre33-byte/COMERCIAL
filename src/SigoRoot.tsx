@@ -10,6 +10,7 @@ import {
   resolverEmpresaActiva,
   type EmpresaOperativa,
 } from "./tenant";
+import { supabase } from "./supabase";
 import {
   etiquetaRol,
   type SigoWorkspace,
@@ -25,9 +26,13 @@ const WORKSPACE_LABELS: Record<SigoWorkspace, string> = {
   informes: "Informes",
 };
 
+type TenantState = "loading" | "ready" | "empty" | "error";
+
 export default function SigoRoot() {
   const [empresaActiva, setEmpresaActiva] = useState<EmpresaOperativa | null>(null);
   const [tenantReady, setTenantReady] = useState(false);
+  const [tenantState, setTenantState] = useState<TenantState>("loading");
+  const [tenantRetryKey, setTenantRetryKey] = useState(0);
   const [workspace, setWorkspace] = useState<SigoWorkspace>("operacion");
   const [nuevaEmpresa, setNuevaEmpresa] = useState("");
   const [creandoEmpresa, setCreandoEmpresa] = useState(false);
@@ -73,27 +78,28 @@ export default function SigoRoot() {
       const creada = resolverEmpresaActiva(empresas, empresaId);
       if (!creada) throw new Error("EMPRESA_CREATED_NOT_VISIBLE");
       setEmpresaActiva(creada);
+      setTenantState("ready");
       setWorkspace(workspaceInicial(creada.rol));
       setNuevaEmpresa("");
     } catch (error) {
       console.error("No se pudo completar el alta inicial de empresa", error);
-      setErrorEmpresa("No pudimos crear la empresa todavía. Reintentá en unos segundos.");
+      setErrorEmpresa("No pudimos terminar la configuración. Tocá Reintentar acceso y volvé a probar.");
     } finally {
       setCreandoEmpresa(false);
     }
   }
 
+  async function cambiarUsuario() {
+    await supabase.auth.signOut();
+  }
+
   return (
     <div className="sigo-root">
       <style>{`
-        /* Clientes, Compras e Informes se navegan desde la barra global.
-           Se ocultan sus duplicados legacy para evitar botones que llevan a "Pendiente". */
         .sigo-operation-only .sidebar .menu > button:nth-child(4),
         .sigo-operation-only .sidebar .menu > button:nth-child(5),
         .sigo-operation-only .sidebar .menu > button:nth-child(7) { display: none; }
 
-        /* El rol también limita la navegación interna de Operación.
-           Backend/RLS sigue siendo la autoridad: esto evita ofrecer acciones que el rol no debe usar. */
         .sigo-role-seller .sidebar .menu > button:nth-child(2),
         .sigo-role-seller .sidebar .menu > button:nth-child(6),
         .sigo-role-seller .welcome .topbar-actions { display: none; }
@@ -102,7 +108,7 @@ export default function SigoRoot() {
 
         .sigo-onboarding-card {
           width: min(520px, calc(100% - 32px));
-          margin: 64px auto;
+          margin: 48px auto;
           padding: 28px;
           border-radius: 22px;
           background: #fff;
@@ -119,6 +125,14 @@ export default function SigoRoot() {
           font-size: 16px;
         }
         .sigo-onboarding-error { color: #b91c1c; font-size: 13px; }
+        .sigo-onboarding-actions { display: grid; gap: 10px; margin-top: 18px; }
+        .sigo-link-button {
+          border: 0;
+          background: transparent;
+          color: #2563eb;
+          font-weight: 800;
+          padding: 8px;
+        }
       `}</style>
 
       <div className="sigo-tenant-bar" role="region" aria-label="Contexto operativo SIGO">
@@ -141,11 +155,32 @@ export default function SigoRoot() {
             ))}
           </div>
         )}
-        <TenantSwitcher value={empresaActiva?.empresa_id ?? null} onChange={handleEmpresaChange} />
+        <TenantSwitcher
+          key={tenantRetryKey}
+          value={empresaActiva?.empresa_id ?? null}
+          onChange={handleEmpresaChange}
+          onStateChange={setTenantState}
+        />
       </div>
 
-      {!tenantReady ? (
-        <div className="sigo-tenant-state" aria-live="polite">Preparando empresa activa…</div>
+      {!tenantReady || tenantState === "loading" ? (
+        <main className="sigo-onboarding-card" aria-live="polite">
+          <h1>Preparando SIGO…</h1>
+          <p>Estamos cargando tu empresa y tus permisos.</p>
+        </main>
+      ) : tenantState === "error" ? (
+        <main className="sigo-onboarding-card" role="alert">
+          <h1>No pudimos completar el acceso</h1>
+          <p>No necesitás configurar nada técnico. Reintentá y SIGO volverá a cargar tu empresa.</p>
+          <div className="sigo-onboarding-actions">
+            <button className="primary-button" type="button" onClick={() => setTenantRetryKey((v) => v + 1)}>
+              Reintentar acceso
+            </button>
+            <button className="sigo-link-button" type="button" onClick={() => void cambiarUsuario()}>
+              Cambiar usuario
+            </button>
+          </div>
+        </main>
       ) : empresaActiva ? (
         workspace === "clientes" ? (
           <main className="main" style={{ minHeight: "calc(100vh - 88px)" }}><section className="content"><ClientesOperativos key={empresaActiva.empresa_id} empresaId={empresaActiva.empresa_id} /></section></main>
@@ -156,15 +191,15 @@ export default function SigoRoot() {
         ) : workspacePermitido(empresaActiva.rol, "operacion") ? (
           <div className={`sigo-operation-only sigo-role-${empresaActiva.rol}`}><SigoApp key={empresaActiva.empresa_id} empresa={empresaActiva} /></div>
         ) : (
-          <main className="sigo-tenant-state" role="alert">
-            <h1>Acceso limitado por rol</h1>
-            <p>Tu perfil {etiquetaRol(empresaActiva.rol)} no tiene habilitada la operación interna de esta empresa.</p>
+          <main className="sigo-onboarding-card" role="alert">
+            <h1>Acceso limitado</h1>
+            <p>Tu perfil no tiene habilitada esta operación.</p>
           </main>
         )
       ) : (
         <main className="sigo-onboarding-card">
-          <h1>Configurá tu empresa</h1>
-          <p>Tu cuenta ya está activa. Creá tu primera empresa para empezar a trabajar en SIGO como administrador principal.</p>
+          <h1>Creá tu empresa</h1>
+          <p>Solo necesitamos el nombre del negocio. Después entrás directo a SIGO como administrador principal.</p>
           <form onSubmit={crearPrimeraEmpresa}>
             <input
               aria-label="Nombre de la empresa"
@@ -176,7 +211,7 @@ export default function SigoRoot() {
             />
             {errorEmpresa ? <div className="sigo-onboarding-error" role="alert">{errorEmpresa}</div> : null}
             <button className="primary-button" type="submit" disabled={creandoEmpresa}>
-              {creandoEmpresa ? "Creando empresa…" : "Crear empresa y continuar"}
+              {creandoEmpresa ? "Creando…" : "Crear y entrar"}
             </button>
           </form>
         </main>
