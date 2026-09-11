@@ -73,6 +73,7 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
   );
 
   const puedeConfirmar = items.length > 0
+    && medioPago !== "cuenta_corriente"
     && items.every((item) => item.producto.precio_venta != null && item.producto.stock_actual != null && item.cantidad <= Number(item.producto.stock_actual));
 
   async function confirmar() {
@@ -122,11 +123,15 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
               <option value="debito">Débito</option>
               <option value="credito">Crédito</option>
               <option value="transferencia">Transferencia</option>
-              <option value="cuenta_corriente">Cuenta corriente</option>
+              <option value="cuenta_corriente" disabled>Cuenta corriente · requiere cliente</option>
               <option value="otro">Otro</option>
             </select>
           </label>
         </div>
+
+        <p style={{ marginTop: 0, opacity: 0.72 }}>
+          Cuenta corriente queda bloqueada hasta asociar cliente y generar el saldo/deuda correspondiente. Así evitamos descontar stock sin registrar correctamente el cobro pendiente.
+        </p>
 
         <div className="table-wrapper">
           <table className="products-table">
