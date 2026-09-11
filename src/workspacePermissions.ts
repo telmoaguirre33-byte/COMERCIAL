@@ -7,8 +7,12 @@ const WORKSPACES_BY_ROLE: Record<RolEmpresaSigo, readonly SigoWorkspace[]> = {
   admin: ["operacion", "clientes", "compras", "informes"],
   administrative: ["operacion", "clientes", "compras", "informes"],
   seller: ["operacion", "clientes"],
-  warehouse: ["operacion", "compras"],
-  client: ["clientes"],
+  // Depósito opera catálogo/stock, pero no entra a Compras para no exponer costos
+  // hasta disponer de una vista de recepción específica sin valores sensibles.
+  warehouse: ["operacion"],
+  // Cliente nunca entra a módulos internos. El acceso externo debe resolverse
+  // exclusivamente por Portal Cliente, con consultas limitadas a su propia cuenta.
+  client: [],
 };
 
 export function workspacesPermitidos(rol: RolEmpresaSigo): readonly SigoWorkspace[] {
