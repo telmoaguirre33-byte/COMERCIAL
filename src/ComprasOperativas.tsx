@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { listarProductosSigo, type ProductoSigo } from "./productos";
 import {
@@ -39,6 +39,7 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
   const [nuevoProveedor, setNuevoProveedor] = useState("");
   const [nuevoCuit, setNuevoCuit] = useState("");
   const [ultimaConciliacion, setUltimaConciliacion] = useState<UltimaConciliacion | null>(null);
+  const idempotencyKeyRef = useRef(crypto.randomUUID());
 
   async function cargar() {
     setLoading(true);
@@ -61,6 +62,7 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
   }
 
   useEffect(() => {
+    idempotencyKeyRef.current = crypto.randomUUID();
     setUltimaConciliacion(null);
     void cargar();
   }, [empresaId]);
@@ -93,10 +95,15 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
 
   async function confirmar(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (saving) return;
     setSaving(true);
     setError("");
     setUltimaConciliacion(null);
     try {
+      if (!proveedores.some((p) => p.id === proveedorId && p.empresa_id === empresaId && p.activo)) {
+        throw new Error("El proveedor seleccionado ya no está disponible en la empresa activa. Actualizá y volvé a seleccionar.");
+      }
+
       const validas = lineas.filter((l) => l.producto_id && l.cantidad > 0 && l.costo_unitario >= 0);
       if (validas.length !== lineas.length) throw new Error("Completá correctamente todas las líneas de la compra.");
       const productoIds = validas.map((l) => l.producto_id);
@@ -105,8 +112,15 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
       }
 
       const items = validas.map(({ producto_id, cantidad, costo_unitario }) => ({ producto_id, cantidad, costo_unitario }));
+      const productosFrescos = await listarProductosSigo(empresaId);
+      const productosMap = new Map(productosFrescos.map((p) => [p.id, p]));
+      for (const item of items) {
+        if (!productosMap.has(item.producto_id)) {
+          throw new Error("Uno de los productos ya no está disponible en la empresa activa. Actualizá la compra antes de confirmar.");
+        }
+      }
       const stockAntes = Object.fromEntries(
-        items.map((item) => [item.producto_id, Number(productos.find((p) => p.id === item.producto_id)?.stock_actual ?? 0)])
+        items.map((item) => [item.producto_id, Number(productosMap.get(item.producto_id)?.stock_actual ?? 0)])
       );
 
       const compraId = await confirmarCompraSigo({
@@ -116,11 +130,12 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
         fecha,
         tipoComprobante: tipo,
         numeroComprobante: numero,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey: idempotencyKeyRef.current,
       });
 
       const resultado = await verificarCompraSigo({ empresaId, compraId, items, stockAntes });
       setUltimaConciliacion({ compraId, resultado });
+      idempotencyKeyRef.current = crypto.randomUUID();
       setLineas([nuevaLinea()]);
       setNumero("");
       await cargar();
