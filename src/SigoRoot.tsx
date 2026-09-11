@@ -37,6 +37,7 @@ export default function SigoRoot() {
   const [nuevaEmpresa, setNuevaEmpresa] = useState("");
   const [creandoEmpresa, setCreandoEmpresa] = useState(false);
   const [errorEmpresa, setErrorEmpresa] = useState("");
+  const [autoRetryCount, setAutoRetryCount] = useState(0);
 
   const permitidos = useMemo(
     () => (empresaActiva ? workspacesPermitidos(empresaActiva.rol) : []),
@@ -47,6 +48,7 @@ export default function SigoRoot() {
     setEmpresaActiva(empresa);
     setTenantReady(true);
     setWorkspace(empresa ? workspaceInicial(empresa.rol) : "operacion");
+    if (empresa) setAutoRetryCount(0);
   }, []);
 
   useEffect(() => {
@@ -55,6 +57,15 @@ export default function SigoRoot() {
       setWorkspace(workspaceInicial(empresaActiva.rol));
     }
   }, [empresaActiva, workspace]);
+
+  useEffect(() => {
+    if (tenantState !== "error" || autoRetryCount >= 3) return;
+    const timer = window.setTimeout(() => {
+      setAutoRetryCount((v) => v + 1);
+      setTenantRetryKey((v) => v + 1);
+    }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [tenantState, autoRetryCount]);
 
   function abrirWorkspace(destino: SigoWorkspace) {
     if (!empresaActiva || !workspacePermitido(empresaActiva.rol, destino)) return;
@@ -99,11 +110,9 @@ export default function SigoRoot() {
         .sigo-operation-only .sidebar .menu > button:nth-child(4),
         .sigo-operation-only .sidebar .menu > button:nth-child(5),
         .sigo-operation-only .sidebar .menu > button:nth-child(7) { display: none; }
-
         .sigo-role-seller .sidebar .menu > button:nth-child(2),
         .sigo-role-seller .sidebar .menu > button:nth-child(6),
         .sigo-role-seller .welcome .topbar-actions { display: none; }
-
         .sigo-role-warehouse .sidebar .menu > button:nth-child(3) { display: none; }
 
         .sigo-onboarding-card {
@@ -126,98 +135,35 @@ export default function SigoRoot() {
         }
         .sigo-onboarding-error { color: #b91c1c; font-size: 13px; }
         .sigo-onboarding-actions { display: grid; gap: 10px; margin-top: 18px; }
-        .sigo-link-button {
-          border: 0;
-          background: transparent;
-          color: #2563eb;
-          font-weight: 800;
-          padding: 8px;
-        }
+        .sigo-link-button { border: 0; background: transparent; color: #2563eb; font-weight: 800; padding: 8px; }
 
-        .sigo-access-shell {
-          min-height: calc(100vh - 86px);
-          display: grid;
-          place-items: start center;
-          padding: 56px 20px 28px;
-          background:
-            radial-gradient(circle at top left, rgba(37, 99, 235, .08), transparent 34%),
-            linear-gradient(180deg, #f8fafc 0%, #f3f6fb 100%);
-        }
-        .sigo-access-card {
-          width: min(470px, 100%);
-          padding: 28px;
-          border: 1px solid rgba(148, 163, 184, .22);
+        .sigo-recovery {
+          width: min(560px, calc(100% - 28px));
+          margin: 42px auto;
+          background: linear-gradient(180deg,#ffffff 0%,#fbfdff 100%);
+          border: 1px solid #e5edf6;
           border-radius: 24px;
-          background: rgba(255,255,255,.98);
           box-shadow: 0 24px 60px rgba(15,23,42,.10);
+          overflow: hidden;
         }
-        .sigo-access-status {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 7px 10px;
-          border-radius: 999px;
-          background: #eff6ff;
-          color: #1d4ed8;
-          font-size: 12px;
-          font-weight: 800;
-          letter-spacing: .02em;
-        }
-        .sigo-access-dot {
-          width: 8px;
-          height: 8px;
-          border-radius: 999px;
-          background: #2563eb;
-          box-shadow: 0 0 0 4px rgba(37,99,235,.10);
-        }
-        .sigo-access-card h1 {
-          margin: 18px 0 10px;
-          color: #0f172a;
-          font-size: clamp(28px, 6vw, 38px);
-          line-height: 1.08;
-          letter-spacing: -.035em;
-        }
-        .sigo-access-card p {
-          margin: 0;
-          color: #64748b;
-          font-size: 15px;
-          line-height: 1.6;
-        }
-        .sigo-access-actions {
-          display: grid;
-          gap: 10px;
-          margin-top: 24px;
-        }
-        .sigo-access-primary {
-          min-height: 52px;
-          border: 0;
-          border-radius: 14px;
-          background: linear-gradient(135deg, #1d4ed8, #2563eb);
-          color: #fff;
-          font-size: 16px;
-          font-weight: 850;
-          box-shadow: 0 12px 24px rgba(37,99,235,.22);
-        }
-        .sigo-access-secondary {
-          min-height: 46px;
-          border: 1px solid #dbe3ee;
-          border-radius: 14px;
-          background: #fff;
-          color: #334155;
-          font-size: 14px;
-          font-weight: 750;
-        }
-        .sigo-access-foot {
-          margin-top: 18px;
-          padding-top: 16px;
-          border-top: 1px solid #eef2f7;
-          color: #94a3b8;
-          font-size: 12px;
-          line-height: 1.45;
-        }
-        @media (max-width: 560px) {
-          .sigo-access-shell { padding: 28px 16px; }
-          .sigo-access-card { padding: 24px 20px; border-radius: 20px; }
+        .sigo-recovery-head { padding: 28px 28px 20px; }
+        .sigo-recovery-brand { display:flex; align-items:center; gap:12px; margin-bottom:22px; }
+        .sigo-recovery-mark { width:42px; height:42px; border-radius:12px; display:grid; place-items:center; background:#2563eb; color:#fff; font-weight:900; letter-spacing:.03em; box-shadow:0 8px 22px rgba(37,99,235,.24); }
+        .sigo-recovery-brand strong { display:block; font-size:18px; color:#0f172a; }
+        .sigo-recovery-brand span { display:block; font-size:13px; color:#64748b; margin-top:2px; }
+        .sigo-recovery-status { display:inline-flex; align-items:center; gap:8px; padding:7px 11px; border-radius:999px; background:#eef5ff; color:#1d4ed8; font-size:13px; font-weight:800; }
+        .sigo-recovery-dot { width:8px; height:8px; border-radius:50%; background:#2563eb; box-shadow:0 0 0 5px rgba(37,99,235,.10); }
+        .sigo-recovery h1 { margin:18px 0 10px; font-size:clamp(30px,7vw,46px); line-height:1.04; color:#0f172a; letter-spacing:-.035em; }
+        .sigo-recovery p { margin:0; color:#64748b; font-size:16px; line-height:1.6; }
+        .sigo-recovery-actions { display:grid; gap:10px; padding:0 28px 28px; }
+        .sigo-recovery .primary-button { min-height:54px; border-radius:14px; font-size:16px; }
+        .sigo-recovery-secondary { min-height:50px; border:1px solid #dbe3ee; border-radius:14px; background:#fff; color:#334155; font-weight:800; font-size:15px; }
+        .sigo-recovery-foot { border-top:1px solid #eef2f7; padding:16px 28px 20px; color:#94a3b8; font-size:12px; line-height:1.5; }
+        @media (max-width:600px){
+          .sigo-recovery { margin:24px auto; border-radius:20px; }
+          .sigo-recovery-head { padding:24px 22px 18px; }
+          .sigo-recovery-actions { padding:0 22px 22px; }
+          .sigo-recovery-foot { padding:14px 22px 18px; }
         }
       `}</style>
 
@@ -230,23 +176,13 @@ export default function SigoRoot() {
         {empresaActiva && (
           <div className="topbar-actions" role="navigation" aria-label="Módulos habilitados">
             {permitidos.map((item) => (
-              <button
-                key={item}
-                className={workspace === item ? "primary-button" : "admin-button"}
-                aria-current={workspace === item ? "page" : undefined}
-                onClick={() => abrirWorkspace(item)}
-              >
+              <button key={item} className={workspace === item ? "primary-button" : "admin-button"} aria-current={workspace === item ? "page" : undefined} onClick={() => abrirWorkspace(item)}>
                 {WORKSPACE_LABELS[item]}
               </button>
             ))}
           </div>
         )}
-        <TenantSwitcher
-          key={tenantRetryKey}
-          value={empresaActiva?.empresa_id ?? null}
-          onChange={handleEmpresaChange}
-          onStateChange={setTenantState}
-        />
+        <TenantSwitcher key={tenantRetryKey} value={empresaActiva?.empresa_id ?? null} onChange={handleEmpresaChange} onStateChange={setTenantState} />
       </div>
 
       {!tenantReady || tenantState === "loading" ? (
@@ -255,21 +191,22 @@ export default function SigoRoot() {
           <p>Estamos cargando tu empresa y tus permisos.</p>
         </main>
       ) : tenantState === "error" ? (
-        <main className="sigo-access-shell">
-          <section className="sigo-access-card" aria-live="polite">
-            <div className="sigo-access-status"><span className="sigo-access-dot" /> Acceso temporalmente interrumpido</div>
-            <h1>No pudimos sincronizar tu empresa</h1>
-            <p>SIGO está disponible, pero no pudo completar la carga de tu empresa en este momento. Podés intentar nuevamente o volver al ingreso.</p>
-            <div className="sigo-access-actions">
-              <button className="sigo-access-primary" type="button" onClick={() => setTenantRetryKey((v) => v + 1)}>
-                Intentar nuevamente
-              </button>
-              <button className="sigo-access-secondary" type="button" onClick={() => void cambiarUsuario()}>
-                Volver al ingreso
-              </button>
-            </div>
-            <div className="sigo-access-foot">Tus datos no se modificaron. La operación permanece protegida hasta completar la sincronización.</div>
-          </section>
+        <main className="sigo-recovery" role="status" aria-live="polite">
+          <div className="sigo-recovery-head">
+            <div className="sigo-recovery-brand"><div className="sigo-recovery-mark">SG</div><div><strong>SIGO</strong><span>Sistema Inteligente de Gestión Operativa</span></div></div>
+            <div className="sigo-recovery-status"><span className="sigo-recovery-dot" />Reconectando tu empresa</div>
+            <h1>Estamos recuperando tu acceso</h1>
+            <p>SIGO está intentando restablecer la conexión con tu empresa automáticamente. No necesitás configurar nada.</p>
+          </div>
+          <div className="sigo-recovery-actions">
+            <button className="primary-button" type="button" onClick={() => { setAutoRetryCount(0); setTenantRetryKey((v) => v + 1); }}>
+              Reintentar ahora
+            </button>
+            <button className="sigo-recovery-secondary" type="button" onClick={() => void cambiarUsuario()}>
+              Volver al ingreso
+            </button>
+          </div>
+          <div className="sigo-recovery-foot">Tus datos permanecen protegidos. SIGO no modifica información mientras completa la reconexión.</div>
         </main>
       ) : empresaActiva ? (
         workspace === "clientes" ? (
@@ -281,28 +218,16 @@ export default function SigoRoot() {
         ) : workspacePermitido(empresaActiva.rol, "operacion") ? (
           <div className={`sigo-operation-only sigo-role-${empresaActiva.rol}`}><SigoApp key={empresaActiva.empresa_id} empresa={empresaActiva} /></div>
         ) : (
-          <main className="sigo-onboarding-card" role="alert">
-            <h1>Acceso limitado</h1>
-            <p>Tu perfil no tiene habilitada esta operación.</p>
-          </main>
+          <main className="sigo-onboarding-card" role="alert"><h1>Acceso limitado</h1><p>Tu perfil no tiene habilitada esta operación.</p></main>
         )
       ) : (
         <main className="sigo-onboarding-card">
           <h1>Creá tu empresa</h1>
           <p>Solo necesitamos el nombre del negocio. Después entrás directo a SIGO como administrador principal.</p>
           <form onSubmit={crearPrimeraEmpresa}>
-            <input
-              aria-label="Nombre de la empresa"
-              placeholder="Nombre de la empresa o negocio"
-              value={nuevaEmpresa}
-              onChange={(event) => setNuevaEmpresa(event.target.value)}
-              autoComplete="organization"
-              required
-            />
+            <input aria-label="Nombre de la empresa" placeholder="Nombre de la empresa o negocio" value={nuevaEmpresa} onChange={(event) => setNuevaEmpresa(event.target.value)} autoComplete="organization" required />
             {errorEmpresa ? <div className="sigo-onboarding-error" role="alert">{errorEmpresa}</div> : null}
-            <button className="primary-button" type="submit" disabled={creandoEmpresa}>
-              {creandoEmpresa ? "Creando…" : "Crear y entrar"}
-            </button>
+            <button className="primary-button" type="submit" disabled={creandoEmpresa}>{creandoEmpresa ? "Creando…" : "Crear y entrar"}</button>
           </form>
         </main>
       )}
