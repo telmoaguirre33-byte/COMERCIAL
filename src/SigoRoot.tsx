@@ -56,6 +56,14 @@ export default function SigoRoot() {
         .sigo-operation-only .sidebar .menu > button:nth-child(4),
         .sigo-operation-only .sidebar .menu > button:nth-child(5),
         .sigo-operation-only .sidebar .menu > button:nth-child(7) { display: none; }
+
+        /* El rol también limita la navegación interna de Operación.
+           Backend/RLS sigue siendo la autoridad: esto evita ofrecer acciones que el rol no debe usar. */
+        .sigo-role-seller .sidebar .menu > button:nth-child(2),
+        .sigo-role-seller .sidebar .menu > button:nth-child(6),
+        .sigo-role-seller .welcome .topbar-actions { display: none; }
+
+        .sigo-role-warehouse .sidebar .menu > button:nth-child(3) { display: none; }
       `}</style>
 
       <div className="sigo-tenant-bar" role="region" aria-label="Contexto operativo SIGO">
@@ -91,7 +99,7 @@ export default function SigoRoot() {
         ) : workspace === "informes" ? (
           <main className="main" style={{ minHeight: "calc(100vh - 88px)" }}><section className="content"><InformesOperativos key={empresaActiva.empresa_id} empresaId={empresaActiva.empresa_id} /></section></main>
         ) : workspacePermitido(empresaActiva.rol, "operacion") ? (
-          <div className="sigo-operation-only"><SigoApp key={empresaActiva.empresa_id} empresa={empresaActiva} /></div>
+          <div className={`sigo-operation-only sigo-role-${empresaActiva.rol}`}><SigoApp key={empresaActiva.empresa_id} empresa={empresaActiva} /></div>
         ) : (
           <main className="sigo-tenant-state" role="alert">
             <h1>Acceso limitado por rol</h1>
