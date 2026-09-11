@@ -17,7 +17,15 @@ type Props = {
 };
 
 function mensajeError(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message;
+  if (error instanceof Error) {
+    if (error.message === "TENANT_ROLE_INVALID") {
+      return "Tu membresía tiene un rol no reconocido. Un administrador debe corregirlo antes de operar.";
+    }
+    if (error.message === "AUTH_REQUIRED") {
+      return "La sesión ya no es válida. Volvé a ingresar para cargar tus empresas.";
+    }
+    if (error.message) return error.message;
+  }
   return "No se pudieron cargar tus empresas.";
 }
 
@@ -53,6 +61,16 @@ export default function TenantSwitcher({ value, onChange, disabled = false }: Pr
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  // Cuando el usuario vuelve a SIGO desde otra pestaña o después de que un admin
+  // cambió su membresía, refrescamos el tenant sin obligarlo a cerrar sesión.
+  useEffect(() => {
+    const refrescarAlVolver = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", refrescarAlVolver);
+    return () => document.removeEventListener("visibilitychange", refrescarAlVolver);
   }, [load]);
 
   const selected = useMemo(() => {
@@ -98,7 +116,7 @@ export default function TenantSwitcher({ value, onChange, disabled = false }: Pr
     return (
       <div aria-live="polite" style={shellStyle}>
         <span style={eyebrowStyle}>Empresa activa</span>
-        <strong>Cargando…</strong>
+        <strong>Actualizando acceso…</strong>
       </div>
     );
   }
@@ -111,7 +129,7 @@ export default function TenantSwitcher({ value, onChange, disabled = false }: Pr
         {detalleError ? <small style={{ opacity: 0.72 }}>{detalleError}</small> : null}
         <div style={buttonRowStyle}>
           <button type="button" onClick={() => void load()} style={secondaryButtonStyle}>
-            Reintentar
+            Reintentar acceso
           </button>
           <button type="button" onClick={() => void cerrarSesion()} style={secondaryButtonStyle}>
             Cambiar usuario
@@ -143,35 +161,50 @@ export default function TenantSwitcher({ value, onChange, disabled = false }: Pr
             {creando ? "Creando…" : "Crear y entrar"}
           </button>
         </form>
-        <button type="button" onClick={() => void cerrarSesion()} style={secondaryButtonStyle}>
-          Ingresar con otro usuario
-        </button>
+        <div style={buttonRowStyle}>
+          <button type="button" onClick={() => void load()} style={secondaryButtonStyle}>
+            Actualizar acceso
+          </button>
+          <button type="button" onClick={() => void cerrarSesion()} style={secondaryButtonStyle}>
+            Ingresar con otro usuario
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <label style={shellStyle}>
-      <span style={eyebrowStyle}>Empresa activa</span>
-      <select
-        value={selected}
-        disabled={disabled || empresas.length === 1}
-        onChange={(event) => selectEmpresa(event.target.value)}
-        aria-label="Seleccionar empresa activa"
-        style={selectStyle}
-      >
-        {empresas.map((empresa) => (
-          <option key={empresa.empresa_id} value={empresa.empresa_id}>
-            {empresa.nombre || empresa.razon_social || "Empresa"}
-          </option>
-        ))}
-      </select>
+    <div style={shellStyle}>
+      <label>
+        <span style={eyebrowStyle}>Empresa activa</span>
+        <select
+          value={selected}
+          disabled={disabled || empresas.length === 1}
+          onChange={(event) => selectEmpresa(event.target.value)}
+          aria-label="Seleccionar empresa activa"
+          style={selectStyle}
+        >
+          {empresas.map((empresa) => (
+            <option key={empresa.empresa_id} value={empresa.empresa_id}>
+              {empresa.nombre || empresa.razon_social || "Empresa"}
+            </option>
+          ))}
+        </select>
+      </label>
       <small style={{ opacity: 0.72 }}>
         {empresas.length === 1
           ? "Tu operación está limitada a esta empresa."
           : "Los datos y permisos cambian con la empresa seleccionada."}
       </small>
-    </label>
+      <div style={buttonRowStyle}>
+        <button type="button" disabled={disabled} onClick={() => void load()} style={secondaryButtonStyle}>
+          Actualizar acceso
+        </button>
+        <button type="button" disabled={disabled} onClick={() => void cerrarSesion()} style={secondaryButtonStyle}>
+          Cerrar sesión
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -187,6 +220,8 @@ const shellStyle: CSSProperties = {
 };
 
 const eyebrowStyle: CSSProperties = {
+  display: "block",
+  marginBottom: 4,
   fontSize: 11,
   fontWeight: 700,
   letterSpacing: ".08em",
