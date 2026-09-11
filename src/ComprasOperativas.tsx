@@ -99,6 +99,10 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
     try {
       const validas = lineas.filter((l) => l.producto_id && l.cantidad > 0 && l.costo_unitario >= 0);
       if (validas.length !== lineas.length) throw new Error("Completá correctamente todas las líneas de la compra.");
+      const productoIds = validas.map((l) => l.producto_id);
+      if (new Set(productoIds).size !== productoIds.length) {
+        throw new Error("No repitas el mismo producto en una compra. Unificá la cantidad en una sola línea.");
+      }
 
       const items = validas.map(({ producto_id, cantidad, costo_unitario }) => ({ producto_id, cantidad, costo_unitario }));
       const stockAntes = Object.fromEntries(
