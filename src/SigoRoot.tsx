@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import ClientesOperativos from "./ClientesOperativos";
+import ComprasOperativas from "./ComprasOperativas";
 import SigoApp from "./SigoApp";
 import TenantSwitcher from "./TenantSwitcher";
 import type { EmpresaOperativa } from "./tenant";
@@ -7,7 +8,7 @@ import type { EmpresaOperativa } from "./tenant";
 export default function SigoRoot() {
   const [empresaActiva, setEmpresaActiva] = useState<EmpresaOperativa | null>(null);
   const [tenantReady, setTenantReady] = useState(false);
-  const [workspace, setWorkspace] = useState<"operacion" | "clientes">("operacion");
+  const [workspace, setWorkspace] = useState<"operacion" | "clientes" | "compras">("operacion");
 
   const handleEmpresaChange = useCallback((empresa: EmpresaOperativa | null) => {
     setEmpresaActiva(empresa);
@@ -36,6 +37,12 @@ export default function SigoRoot() {
             >
               Clientes / Ctas. corrientes
             </button>
+            <button
+              className={workspace === "compras" ? "primary-button" : "admin-button"}
+              onClick={() => setWorkspace("compras")}
+            >
+              Compras / Proveedores
+            </button>
           </div>
         )}
         <TenantSwitcher value={empresaActiva?.empresa_id ?? null} onChange={handleEmpresaChange} />
@@ -50,6 +57,12 @@ export default function SigoRoot() {
           <main className="main" style={{ minHeight: "calc(100vh - 88px)" }}>
             <section className="content">
               <ClientesOperativos key={empresaActiva.empresa_id} empresaId={empresaActiva.empresa_id} />
+            </section>
+          </main>
+        ) : workspace === "compras" ? (
+          <main className="main" style={{ minHeight: "calc(100vh - 88px)" }}>
+            <section className="content">
+              <ComprasOperativas key={empresaActiva.empresa_id} empresaId={empresaActiva.empresa_id} />
             </section>
           </main>
         ) : (
