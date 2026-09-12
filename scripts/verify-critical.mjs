@@ -87,7 +87,7 @@ const checks = [
   },
   {
     file: 'supabase/migrations/20260912122500_ventas_idempotencia_cliente_segura.sql',
-    required: ['IDEMPOTENCY_CONFLICT', 'CLIENTS_READ_FORBIDDEN', 'SALE_ITEM_INVALID', 'SALE_TOO_MANY_ITEMS', 'v_existente_cliente is distinct from p_cliente_id', 'p.empresa_id'],
+    required: ['IDEMPOTENCY_CONFLICT', 'CLIENTS_READ_FORBIDDEN', 'SALE_ITEM_INVALID', 'SALE_TOO_MANY_ITEMS', 'v_existente_cliente is distinct from p_cliente_id', 'p_empresa_id'],
     forbidden: ['delete from public.ventas_sigo', 'truncate'],
     label: 'sale retry/client authorization hardening without destructive history changes',
   },
