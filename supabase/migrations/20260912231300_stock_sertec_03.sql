@@ -80,22 +80,24 @@ begin
 700306606592		Micrófono netmaj	23800	1		11900		Computación
 	0275	camera de seguridad OM	40500	1		22500		Computación
 700306607155		Camera de seguridad	55000	1		24900		Computación
-700306606271		Cámara de seguridad	49800	1	24900		Computación
+700306606271		Cámara de seguridad	49800	1		24900		Computación
 700306607483		Teclado Netmak colores	55800	2		27900		Computación
 	0279	Auricular V5.1 FLUX	15800	0				Computación
-792231720276		FUENTE PC 600W NOGA RGB	73000	0				Computación	0281		CABLE NETMAK VGA 3M	15600	0				Computación
+792231720276		FUENTE PC 600W NOGA RGB	73000	0				Computación
+	0281	CABLE NETMAK VGA 3M	15600	0				Computación
 1124100405202		Mouse XAEA	8000	1		4000		Computación
-1113060410602		Cable USB CA IPHONE	7600	3		3800		Computación
+1113060410601		Cable USB CA IPHONE	7600	3		3800		Computación
 6939050329707		297 GNEIS NEGRO	12000	7		6000		Computación
 	]C1GN664CXLNC	CARTUCHO 664 COLOR	59600	1		29800		Computación
 	0286	Repetidor wifi	35000	0				Computación
 6939050319630		Cartucho 196 Magenta	11000	2		5500		Computación
 1113060410602		CARGADOR TIPO C XAEA	10000	4		5000		Computación
-1124060897902		PEN DRIVE 32G	19000	0				Computación	0290	Boos chager	27500	0				Computación
+1124060897902		PEN DRIVE 32G	19000	0				Computación
+	0290	Boos chager	27500	0				Computación
 	0291	TONER 105 HP CPN CHIP	23000	1		11500		Computación
 194252156926		CARGADOR IPHONE C	16000	4		8000		Computación
 	0293	cargador notebook om	25000	3		12500		Computación
-	GM122BXL	cartucho 122 negro	52020	1		28900		Computación
+	GN122BXL	cartucho 122 negro	52020	1		28900		Computación
 700306604055		auricular inalambrico netmak biza	29500	2		14750		Computación
 	00X603009E008	auricular inalambrico claridad	33000	3		12500		Computación
 700306605502		teclado mecanico netmak legend	55800	1		0		Computación
@@ -104,8 +106,8 @@ begin
 	0300	birome bic 4 unidades	5000	1		0		Computación
 	0301	cargador celular home charger	8000	0				Computación
 	0302	teclado netmak estandar	11000	3		5500		Computación
-	2EQO9400DS002	mouse inalambrico yexa	16000	2		5500		Computación
-	0304	auricular chico samsung	000	3		1500		Computación
+	2EQI9400DS002	mouse inalambrico yexa	16000	2		5500		Computación
+	0304	auricular chico samsung	3000	3		1500		Computación
 $stock$
   ) into v_inserted;
 
