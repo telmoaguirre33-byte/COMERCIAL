@@ -45,6 +45,29 @@ function normalizarTexto(value?: string | null) {
   return normalized ? normalized : null;
 }
 
+function validarNumeroNoNegativo(nombre: string, valor?: number | null) {
+  if (valor == null) return;
+  if (!Number.isFinite(valor) || valor < 0) throw new Error(`${nombre}_INVALID`);
+}
+
+function validarProducto(input: GuardarProductoSigoInput) {
+  validarNumeroNoNegativo("COSTO_ACTUAL", input.costoActual);
+  validarNumeroNoNegativo("COSTO_ULTIMA_COMPRA", input.costoUltimaCompra);
+  validarNumeroNoNegativo("PRECIO_VENTA", input.precioVenta);
+  validarNumeroNoNegativo("MARGEN_GANANCIA", input.margenGanancia);
+  validarNumeroNoNegativo("MARGEN_PORCENTAJE", input.margenPorcentaje);
+  validarNumeroNoNegativo("STOCK_ACTUAL", input.stockActual);
+  validarNumeroNoNegativo("STOCK_MINIMO", input.stockMinimo);
+  validarNumeroNoNegativo("STOCK_MAXIMO", input.stockMaximo);
+
+  if (input.stockMinimo != null && input.stockMaximo != null && input.stockMaximo < input.stockMinimo) {
+    throw new Error("STOCK_RANGE_INVALID");
+  }
+  if (input.stockActual != null && input.stockMaximo != null && input.stockActual > input.stockMaximo) {
+    throw new Error("STOCK_ABOVE_MAXIMUM");
+  }
+}
+
 export async function listarProductosSigo(empresaId: string): Promise<ProductoSigo[]> {
   if (!empresaId) throw new Error("EMPRESA_REQUIRED");
 
@@ -59,6 +82,7 @@ export async function listarProductosSigo(empresaId: string): Promise<ProductoSi
 export async function guardarProductoSigo(input: GuardarProductoSigoInput): Promise<string> {
   if (!input.empresaId) throw new Error("EMPRESA_REQUIRED");
   if (!input.nombre.trim()) throw new Error("PRODUCT_NAME_REQUIRED");
+  validarProducto(input);
 
   const { data, error } = await supabase.rpc("guardar_producto_sigo", {
     p_empresa_id: input.empresaId,
