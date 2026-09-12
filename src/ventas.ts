@@ -25,6 +25,15 @@ export type VentaRecienteSigo = {
   integridad: IntegridadVentaSigo;
 };
 
+const MEDIOS_PAGO_VALIDOS: MedioPagoSigo[] = [
+  "efectivo",
+  "debito",
+  "credito",
+  "transferencia",
+  "cuenta_corriente",
+  "otro",
+];
+
 function crearIdempotencyKey() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -39,7 +48,11 @@ function consolidarItemsVenta(items: VentaItemSigoInput[]): VentaItemSigoInput[]
     if (!productoId || !Number.isFinite(item.cantidad) || item.cantidad <= 0) {
       throw new Error("Hay un producto con cantidad inválida en el carrito.");
     }
-    cantidades.set(productoId, (cantidades.get(productoId) ?? 0) + item.cantidad);
+    const cantidadAcumulada = (cantidades.get(productoId) ?? 0) + item.cantidad;
+    if (!Number.isFinite(cantidadAcumulada) || cantidadAcumulada <= 0) {
+      throw new Error("La cantidad consolidada de un producto es inválida.");
+    }
+    cantidades.set(productoId, cantidadAcumulada);
   }
 
   return Array.from(cantidades, ([productoId, cantidad]) => ({ productoId, cantidad }));
@@ -145,12 +158,15 @@ export async function confirmarVentaSigo(input: {
 }): Promise<{ ventaId: string; idempotencyKey: string; integridad: IntegridadVentaSigo }> {
   if (!input.empresaId) throw new Error("Seleccioná una empresa activa antes de vender.");
   if (input.items.length === 0) throw new Error("Agregá al menos un producto antes de confirmar.");
+  if (!MEDIOS_PAGO_VALIDOS.includes(input.medioPago)) throw new Error("Seleccioná un medio de pago válido.");
   if (input.medioPago === "cuenta_corriente" && !input.clienteId) {
     throw new Error("Cuenta corriente requiere seleccionar un cliente.");
   }
 
   const itemsConsolidados = consolidarItemsVenta(input.items);
   const idempotencyKey = input.idempotencyKey ?? crearIdempotencyKey();
+  if (!idempotencyKey.trim()) throw new Error("No se pudo generar una clave segura para confirmar la venta.");
+
   const { data, error } = await supabase.rpc("confirmar_venta_sigo_v2", {
     p_empresa_id: input.empresaId,
     p_items: itemsConsolidados.map((item) => ({
