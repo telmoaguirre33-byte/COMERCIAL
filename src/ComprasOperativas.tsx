@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import BarcodeScanner from "./BarcodeScanner";
+import type { BarcodeProduct } from "./barcode";
 import { listarProductosSigo, type ProductoSigo } from "./productos";
 import {
   confirmarCompraSigo,
@@ -97,6 +99,33 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
 
   function editarLinea(key: string, patch: Partial<Linea>) {
     setLineas((actual) => actual.map((l) => l.key === key ? { ...l, ...patch } : l));
+  }
+
+  function agregarProductoEscaneado(producto: BarcodeProduct) {
+    if (saving || loading) return;
+    setError("");
+    const maestro = productos.find((item) => item.id === producto.id);
+    if (!maestro) {
+      setError("El producto escaneado ya no está disponible en la empresa activa. Actualizá Compras y volvé a escanear.");
+      return;
+    }
+    const costoBase = Number(maestro.costo_actual ?? maestro.costo_ultima_compra ?? 0);
+    const costo = Number.isFinite(costoBase) && costoBase >= 0 ? costoBase : 0;
+
+    setLineas((actual) => {
+      const existente = actual.find((linea) => linea.producto_id === maestro.id);
+      if (existente) {
+        return actual.map((linea) => linea.key === existente.key
+          ? { ...linea, cantidad: Number(linea.cantidad || 0) + 1 }
+          : linea);
+      }
+
+      if (actual.length === 1 && !actual[0].producto_id) {
+        return [{ ...actual[0], producto_id: maestro.id, cantidad: 1, costo_unitario: costo }];
+      }
+
+      return [...actual, { key: nuevaClave(), producto_id: maestro.id, cantidad: 1, costo_unitario: costo }];
+    });
   }
 
   async function crearProveedor() {
@@ -221,6 +250,12 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
           <div className="form-group"><label>Fecha</label><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
           <div className="form-group"><label>Tipo</label><input value={tipo} onChange={(e) => setTipo(e.target.value)} /></div>
           <div className="form-group"><label>Nº comprobante</label><input value={numero} onChange={(e) => setNumero(e.target.value)} /></div>
+        </div>
+
+        <div style={{ marginTop: 18 }}>
+          <h4 style={{ marginBottom: 6 }}>Escanear mercadería</h4>
+          <p style={{ marginTop: 0 }}>Pistola, ingreso manual o cámara: cada lectura agrega una unidad del producto a esta compra. Si ya estaba agregado, incrementa la cantidad.</p>
+          <BarcodeScanner empresaId={empresaId} action="ingresar" onProduct={agregarProductoEscaneado} />
         </div>
 
         <div className="table-wrapper" style={{ marginTop: 18 }}>
