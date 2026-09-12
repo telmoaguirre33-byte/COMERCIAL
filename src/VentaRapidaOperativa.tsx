@@ -22,6 +22,7 @@ function etiquetaMedio(medio: MedioPagoSigo) {
     debito: "Débito",
     credito: "Crédito",
     transferencia: "Transferencia",
+    mercado_pago: "Mercado Pago",
     cuenta_corriente: "Cuenta corriente",
     otro: "Otro",
   };
@@ -236,6 +237,7 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
                 <option value="debito">Débito</option>
                 <option value="credito">Crédito</option>
                 <option value="transferencia">Transferencia</option>
+                <option value="mercado_pago">Mercado Pago</option>
                 <option value="cuenta_corriente">Cuenta corriente</option>
                 <option value="otro">Otro</option>
               </select>
