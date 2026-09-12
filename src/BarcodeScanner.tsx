@@ -19,6 +19,7 @@ type BarcodeDetectorLike = {
 };
 
 type BarcodeDetectorCtor = new (options?: { formats?: string[] }) => BarcodeDetectorLike;
+type ScanSource = "manual" | "wedge" | "camera";
 
 const ACTIONS: Array<{ value: BarcodeAction; label: string }> = [
   { value: "vender", label: "Vender producto" },
@@ -28,7 +29,7 @@ const ACTIONS: Array<{ value: BarcodeAction; label: string }> = [
 ];
 
 const SCANNER_GAP_MS = 90;
-const DUPLICATE_GUARD_MS = 750;
+const CAMERA_DUPLICATE_GUARD_MS = 1200;
 
 export default function BarcodeScanner({
   empresaId,
@@ -47,7 +48,7 @@ export default function BarcodeScanner({
   const inFlightRef = useRef(false);
   const wedgeBufferRef = useRef("");
   const wedgeLastKeyAtRef = useRef(0);
-  const lastResolvedRef = useRef<{ code: string; at: number } | null>(null);
+  const lastCameraResolvedRef = useRef<{ code: string; at: number } | null>(null);
 
   const detectorCtor = useMemo(() => {
     const w = window as typeof window & { BarcodeDetector?: BarcodeDetectorCtor };
@@ -58,7 +59,7 @@ export default function BarcodeScanner({
     window.setTimeout(() => inputRef.current?.focus(), 0);
   }
 
-  async function resolveCode(raw: string) {
+  async function resolveCode(raw: string, source: ScanSource = "manual") {
     const normalized = normalizeBarcode(raw);
     if (!normalized || inFlightRef.current) return;
     if (!empresaId) {
@@ -67,12 +68,11 @@ export default function BarcodeScanner({
       return;
     }
 
-    const now = Date.now();
-    const previous = lastResolvedRef.current;
-    if (previous && previous.code === normalized && now - previous.at < DUPLICATE_GUARD_MS) {
-      setCode("");
-      focusScanner();
-      return;
+    if (source === "camera") {
+      const now = Date.now();
+      const previous = lastCameraResolvedRef.current;
+      if (previous && previous.code === normalized && now - previous.at < CAMERA_DUPLICATE_GUARD_MS) return;
+      lastCameraResolvedRef.current = { code: normalized, at: now };
     }
 
     inFlightRef.current = true;
@@ -88,16 +88,16 @@ export default function BarcodeScanner({
         setError("El código está duplicado dentro de esta empresa. Revisá el maestro de productos.");
         return;
       }
-      lastResolvedRef.current = { code: normalized, at: Date.now() };
       setCode("");
       onProduct(matches[0], action);
+      if ("vibrate" in navigator) navigator.vibrate?.(40);
     } catch (e) {
       console.error(e);
       setError("No se pudo consultar el código. Verificá conexión, permisos y empresa activa.");
     } finally {
       inFlightRef.current = false;
       setBusy(false);
-      focusScanner();
+      if (source !== "camera") focusScanner();
     }
   }
 
@@ -105,6 +105,7 @@ export default function BarcodeScanner({
     scanningRef.current = false;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    lastCameraResolvedRef.current = null;
     setCameraOpen(false);
     focusScanner();
   }
@@ -126,6 +127,7 @@ export default function BarcodeScanner({
         audio: false,
       });
       streamRef.current = stream;
+      lastCameraResolvedRef.current = null;
       setCameraOpen(true);
     } catch (e) {
       console.error(e);
@@ -147,19 +149,15 @@ export default function BarcodeScanner({
     const scan = async () => {
       if (!scanningRef.current) return;
       try {
-        if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        if (!inFlightRef.current && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
           const results = await detector.detect(video);
           const found = results.map((r) => normalizeBarcode(r.rawValue || "")).find(Boolean);
-          if (found) {
-            stopCamera();
-            await resolveCode(found);
-            return;
-          }
+          if (found) await resolveCode(found, "camera");
         }
       } catch (e) {
         console.debug("BarcodeDetector scan skipped", e);
       }
-      timer = window.setTimeout(scan, 250);
+      timer = window.setTimeout(scan, 220);
     };
 
     void video.play().then(scan).catch((e) => {
@@ -197,7 +195,7 @@ export default function BarcodeScanner({
         wedgeBufferRef.current = "";
         if (buffered.length >= 4) {
           event.preventDefault();
-          void resolveCode(buffered);
+          void resolveCode(buffered, "wedge");
         }
         return;
       }
@@ -230,7 +228,9 @@ export default function BarcodeScanner({
         <input
           ref={inputRef}
           type="text"
-          inputMode="numeric"
+          inputMode="text"
+          autoCapitalize="off"
+          spellCheck={false}
           autoComplete="off"
           autoFocus
           value={code}
@@ -238,27 +238,28 @@ export default function BarcodeScanner({
           onKeyDown={(e) => {
             if (isLikelyScannerSubmit(e.key)) {
               e.preventDefault();
-              void resolveCode(code);
+              void resolveCode(code, "manual");
             }
           }}
-          placeholder="Escaneá o ingresá el código"
+          placeholder="Código de barras o interno"
           aria-label="Código de barras o código interno"
         />
-        <button type="button" disabled={busy || !code.trim()} onClick={() => void resolveCode(code)}>
+        <button type="button" disabled={busy || !code.trim()} onClick={() => void resolveCode(code, "manual")}>
           {busy ? "Buscando…" : "Buscar"}
         </button>
         <button type="button" disabled={busy || cameraOpen} onClick={() => void openCamera()}>
-          Escanear con cámara
+          📷 Escanear con cámara
         </button>
       </div>
 
       <p style={{ margin: 0, opacity: 0.7, fontSize: 13 }}>
-        La pistola USB/Bluetooth puede leer aun sin tocar el campo. El foco vuelve automáticamente después de cada lectura.
+        Pistola USB/Bluetooth: cada lectura suma una unidad, incluso si escaneás el mismo producto varias veces. También acepta código interno alfanumérico.
       </p>
 
       {cameraOpen && (
         <div style={{ display: "grid", gap: 8 }}>
           <video ref={videoRef} playsInline muted style={{ width: "100%", maxWidth: 480, borderRadius: 12 }} />
+          <p style={{ margin: 0, fontSize: 13, opacity: 0.72 }}>Cámara continua: apuntá al siguiente producto sin cerrar el lector.</p>
           <button type="button" onClick={stopCamera}>Cerrar cámara</button>
         </div>
       )}
