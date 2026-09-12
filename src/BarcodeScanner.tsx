@@ -154,9 +154,17 @@ export default function BarcodeScanner({
 
     const video = videoRef.current;
     video.srcObject = streamRef.current;
-    const detector = new detectorCtor({
-      formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "qr_code"],
-    });
+    let detector: BarcodeDetectorLike;
+    try {
+      // No forzamos una lista de formatos: algunos navegadores lanzan NotSupportedError
+      // si se incluye siquiera un formato que su implementación no reconoce.
+      detector = new detectorCtor();
+    } catch (e) {
+      console.error("BarcodeDetector no pudo inicializarse", e);
+      setError("El lector de cámara de este navegador no pudo inicializarse. Usá pistola o ingreso manual.");
+      stopCamera();
+      return;
+    }
     scanningRef.current = true;
 
     let timer: number | undefined;
