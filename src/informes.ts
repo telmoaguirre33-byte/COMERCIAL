@@ -1,6 +1,5 @@
 import { supabase } from "./supabase";
 import { listarClientesSigo } from "./clientes";
-import { listarComprasSigo } from "./compras";
 import { listarProductosSigo } from "./productos";
 
 export type ResumenOperativoSigo = {
@@ -29,11 +28,21 @@ type VentaRow = {
   created_at?: string | null;
 };
 
+type CompraRow = {
+  total?: number | string | null;
+  created_at?: string | null;
+};
+
 type CajaRow = {
   tipo?: "ingreso" | "egreso" | string | null;
   medio_pago?: string | null;
   importe?: number | string | null;
 };
+
+function numeroSeguro(valor: number | string | null | undefined): number {
+  const numero = Number(valor ?? 0);
+  return Number.isFinite(numero) ? numero : 0;
+}
 
 async function listarVentasSigoCompletas(empresaId: string): Promise<VentaRow[]> {
   const pagina = 1000;
@@ -44,11 +53,34 @@ async function listarVentasSigoCompletas(empresaId: string): Promise<VentaRow[]>
       .from("ventas_sigo")
       .select("total,created_at")
       .eq("empresa_id", empresaId)
+      .eq("estado", "confirmada")
       .order("created_at", { ascending: false })
       .range(desde, desde + pagina - 1);
 
     if (error) throw error;
     const lote = (data ?? []) as VentaRow[];
+    filas.push(...lote);
+    if (lote.length < pagina) break;
+  }
+
+  return filas;
+}
+
+async function listarComprasSigoCompletas(empresaId: string): Promise<CompraRow[]> {
+  const pagina = 1000;
+  const filas: CompraRow[] = [];
+
+  for (let desde = 0; ; desde += pagina) {
+    const { data, error } = await supabase
+      .from("compras_sigo")
+      .select("total,created_at")
+      .eq("empresa_id", empresaId)
+      .eq("estado", "confirmada")
+      .order("created_at", { ascending: false })
+      .range(desde, desde + pagina - 1);
+
+    if (error) throw error;
+    const lote = (data ?? []) as CompraRow[];
     filas.push(...lote);
     if (lote.length < pagina) break;
   }
@@ -87,7 +119,7 @@ export async function cargarResumenOperativoSigo(empresaId: string): Promise<Res
   const [productosResult, clientesResult, comprasResult, ventasResult, cajaResult] = await Promise.allSettled([
     listarProductosSigo(empresaId),
     listarClientesSigo(empresaId),
-    listarComprasSigo(empresaId),
+    listarComprasSigoCompletas(empresaId),
     listarVentasSigoCompletas(empresaId),
     listarCajaHoySigo(empresaId, inicioHoy.toISOString()),
   ]);
@@ -106,30 +138,33 @@ export async function cargarResumenOperativoSigo(empresaId: string): Promise<Res
   if (cajaResult.status === "rejected") modulosNoDisponibles.push("Caja");
 
   const visibles = productos.filter((producto) => producto.stock_actual != null);
-  const productosSinStock = visibles.filter((producto) => Number(producto.stock_actual ?? 0) <= 0).length;
+  const productosSinStock = visibles.filter((producto) => numeroSeguro(producto.stock_actual) <= 0).length;
   const productosCriticos = visibles.filter((producto) =>
-    producto.stock_minimo != null && Number(producto.stock_actual ?? 0) <= Number(producto.stock_minimo)
+    producto.stock_minimo != null && numeroSeguro(producto.stock_actual) <= numeroSeguro(producto.stock_minimo)
   ).length;
-  const unidadesStock = visibles.reduce((total, producto) => total + Number(producto.stock_actual ?? 0), 0);
+  const unidadesStock = visibles.reduce((total, producto) => total + numeroSeguro(producto.stock_actual), 0);
 
-  const clientesConDeuda = clientes.filter((cliente) => Number(cliente.saldo_actual ?? 0) > 0).length;
-  const saldoClientes = clientes.reduce((total, cliente) => total + Number(cliente.saldo_actual ?? 0), 0);
-  const comprasTotal = compras.reduce((total, compra) => total + Number(compra.total ?? 0), 0);
-  const ventasTotal = ventas.reduce((total, venta) => total + Number(venta.total ?? 0), 0);
+  const saldosPositivos = clientes
+    .map((cliente) => numeroSeguro(cliente.saldo_actual))
+    .filter((saldo) => saldo > 0);
+  const clientesConDeuda = saldosPositivos.length;
+  const saldoClientes = saldosPositivos.reduce((total, saldo) => total + saldo, 0);
+  const comprasTotal = compras.reduce((total, compra) => total + numeroSeguro(compra.total), 0);
+  const ventasTotal = ventas.reduce((total, venta) => total + numeroSeguro(venta.total), 0);
 
   const ventasDeHoy = ventas.filter((venta) => venta.created_at && new Date(venta.created_at).getTime() >= inicioHoy.getTime());
-  const ventasHoyTotal = ventasDeHoy.reduce((total, venta) => total + Number(venta.total ?? 0), 0);
+  const ventasHoyTotal = ventasDeHoy.reduce((total, venta) => total + numeroSeguro(venta.total), 0);
 
   const cajaHoyIngresos = cajaHoy
     .filter((movimiento) => movimiento.tipo === "ingreso")
-    .reduce((total, movimiento) => total + Number(movimiento.importe ?? 0), 0);
+    .reduce((total, movimiento) => total + numeroSeguro(movimiento.importe), 0);
   const cajaHoyEgresos = cajaHoy
     .filter((movimiento) => movimiento.tipo === "egreso")
-    .reduce((total, movimiento) => total + Number(movimiento.importe ?? 0), 0);
+    .reduce((total, movimiento) => total + numeroSeguro(movimiento.importe), 0);
   const cajaHoyPorMedio = cajaHoy.reduce<Record<string, number>>((acumulado, movimiento) => {
     if (movimiento.tipo !== "ingreso") return acumulado;
     const medio = movimiento.medio_pago?.trim() || "otro";
-    acumulado[medio] = (acumulado[medio] ?? 0) + Number(movimiento.importe ?? 0);
+    acumulado[medio] = (acumulado[medio] ?? 0) + numeroSeguro(movimiento.importe);
     return acumulado;
   }, {});
 
