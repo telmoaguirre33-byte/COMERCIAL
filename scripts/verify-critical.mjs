@@ -32,8 +32,8 @@ const checks = [
   },
   {
     file: 'src/BarcodeScanner.tsx',
-    required: ['getUserMedia', 'BarcodeDetector', 'onProduct', 'ScanSource = "manual" | "wedge" | "camera"', 'empresaActivaRef', 'onActionChange && (', '📷 Escanear con cámara', 'Pistola USB/Bluetooth'],
-    label: 'manual/wedge/mobile-camera barcode scanner with tenant isolation and context-safe actions',
+    required: ['getUserMedia', 'BarcodeDetector', 'onProduct', 'ScanSource = "manual" | "wedge" | "camera"', 'empresaActivaRef', 'onActionChange && (', '📷 Escanear con cámara', 'Pistola USB/Bluetooth', 'detector = new detectorCtor()', 'lector de cámara de este navegador no pudo inicializarse'],
+    label: 'manual/wedge/mobile-camera barcode scanner with tenant isolation and resilient camera startup',
   },
   {
     file: 'src/barcode.ts',
@@ -84,6 +84,18 @@ const checks = [
     file: 'supabase/migrations/20260912111800_evitar_codigos_duplicados_por_empresa.sql',
     required: ['validar_codigo_producto_unico_sigo', 'BARCODE_DUPLICATE_IN_COMPANY', 'INTERNAL_CODE_DUPLICATE_IN_COMPANY', 'before insert or update', 'p.empresa_id = new.empresa_id'],
     label: 'new product-code collisions blocked per tenant without destructive cleanup',
+  },
+  {
+    file: 'supabase/migrations/20260912122500_ventas_idempotencia_cliente_segura.sql',
+    required: ['IDEMPOTENCY_CONFLICT', 'CLIENTS_READ_FORBIDDEN', 'SALE_ITEM_INVALID', 'SALE_TOO_MANY_ITEMS', 'v_existente_cliente is distinct from p_cliente_id', 'p.empresa_id'],
+    forbidden: ['delete from public.ventas_sigo', 'truncate'],
+    label: 'sale retry/client authorization hardening without destructive history changes',
+  },
+  {
+    file: 'supabase/migrations/20260912123000_compras_idempotencia_stock_segura.sql',
+    required: ['IDEMPOTENCY_KEY_REQUIRED', 'IDEMPOTENCY_CONFLICT', 'DUPLICATE_PRODUCT_ITEM', 'STOCK_WRITE_REQUIRED', 'v_producto_id = any(v_seen)', 'p_empresa_id'],
+    forbidden: ['delete from public.compras_sigo', 'truncate'],
+    label: 'purchase retry/stock hardening without destructive history changes',
   },
   {
     file: 'supabase/migrations/20260910110800_mis_empresas_operativas.sql',
