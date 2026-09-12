@@ -41,8 +41,9 @@ function normalizarEmpresa(empresa: Omit<EmpresaOperativa, "empresa_nombre">): E
 function deduplicarEmpresas(empresas: EmpresaOperativa[]): EmpresaOperativa[] {
   const porId = new Map<string, EmpresaOperativa>();
   for (const empresa of empresas) {
-    if (!empresa.empresa_id) continue;
-    if (!porId.has(empresa.empresa_id)) porId.set(empresa.empresa_id, empresa);
+    const empresaId = empresa.empresa_id.trim();
+    if (!empresaId) continue;
+    if (!porId.has(empresaId)) porId.set(empresaId, { ...empresa, empresa_id: empresaId });
   }
   return Array.from(porId.values());
 }
@@ -122,7 +123,7 @@ async function cargarEmpresasPorMembresia(): Promise<EmpresaOperativa[]> {
 
     return [
       normalizarEmpresa({
-        empresa_id: empresa.id,
+        empresa_id: String(empresa.id).trim(),
         nombre: empresa.nombre ?? "Empresa",
         razon_social: empresa.razon_social ?? null,
         rol: normalizarRol(fila.rol),
@@ -139,7 +140,7 @@ async function cargarMisEmpresasUnaVez(): Promise<EmpresaOperativa[]> {
   if (!error) {
     const normalizadas = ((data ?? []) as Array<Record<string, unknown>>).map((fila) =>
       normalizarEmpresa({
-        empresa_id: String(fila.empresa_id ?? ""),
+        empresa_id: String(fila.empresa_id ?? "").trim(),
         nombre: String(fila.nombre ?? "Empresa"),
         razon_social: typeof fila.razon_social === "string" ? fila.razon_social : null,
         rol: normalizarRol(fila.rol),
@@ -191,7 +192,10 @@ export async function crearEmpresaSigo(nombre: string): Promise<string> {
     if (errorBackendNoPreparado(error)) throw new Error("TENANT_BACKEND_MIGRATION_PENDING");
     throw error;
   }
-  return data as string;
+
+  const empresaId = typeof data === "string" ? data.trim() : "";
+  if (!empresaId) throw new Error("EMPRESA_ID_INVALID");
+  return empresaId;
 }
 
 function activeCompanyStorageKey(userId?: string | null): string {
@@ -199,15 +203,20 @@ function activeCompanyStorageKey(userId?: string | null): string {
   return normalizedUserId ? `${ACTIVE_COMPANY_KEY}.${normalizedUserId}` : ACTIVE_COMPANY_KEY;
 }
 
+function leerStorageLimpio(key: string): string | null {
+  const value = window.localStorage.getItem(key)?.trim() ?? "";
+  return value || null;
+}
+
 export function leerEmpresaActivaGuardada(userId?: string | null): string | null {
   try {
     const scopedKey = activeCompanyStorageKey(userId);
-    const scopedValue = window.localStorage.getItem(scopedKey);
+    const scopedValue = leerStorageLimpio(scopedKey);
     if (scopedValue) return scopedValue;
 
     // Compatibilidad con sesiones anteriores: el valor legado solo se usa como sugerencia
     // y siempre se vuelve a validar contra las membresías visibles del usuario actual.
-    return userId ? window.localStorage.getItem(ACTIVE_COMPANY_KEY) : scopedValue;
+    return userId ? leerStorageLimpio(ACTIVE_COMPANY_KEY) : scopedValue;
   } catch {
     return null;
   }
@@ -216,8 +225,9 @@ export function leerEmpresaActivaGuardada(userId?: string | null): string | null
 export function guardarEmpresaActiva(empresaId: string | null, userId?: string | null): void {
   try {
     const key = activeCompanyStorageKey(userId);
-    if (empresaId) {
-      window.localStorage.setItem(key, empresaId);
+    const normalizedEmpresaId = empresaId?.trim() ?? "";
+    if (normalizedEmpresaId) {
+      window.localStorage.setItem(key, normalizedEmpresaId);
     } else {
       window.localStorage.removeItem(key);
     }
@@ -233,12 +243,15 @@ export function resolverEmpresaActiva(
 ): EmpresaOperativa | null {
   if (empresas.length === 0) return null;
 
-  const candidata = preferida ?? leerEmpresaActivaGuardada(userId);
+  const candidata = (preferida ?? leerEmpresaActivaGuardada(userId))?.trim() || null;
   const encontrada = candidata
     ? empresas.find((empresa) => empresa.empresa_id === candidata)
     : undefined;
 
   const activa = encontrada ?? empresas[0];
-  guardarEmpresaActiva(activa.empresa_id, userId);
+
+  // La persistencia definitiva siempre debe quedar ligada al usuario autenticado.
+  // Si el caller todavía no tiene userId, devolvemos la empresa sin escribir la clave global legado.
+  if (userId?.trim()) guardarEmpresaActiva(activa.empresa_id, userId);
   return activa;
 }
