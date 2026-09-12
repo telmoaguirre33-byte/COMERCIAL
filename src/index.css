@@ -32,6 +32,7 @@ button { cursor: pointer; }
 .sigo-tenant-copy { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .sigo-tenant-copy strong { font-size: 18px; letter-spacing: .06em; color: #0f172a; }
 .sigo-tenant-copy span { color: #64748b; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sigo-tenant-copy small { color:#334155; font-weight:750; }
 .sigo-tenant-state { width: min(720px, calc(100% - 32px)); margin: 48px auto; padding: 28px; border: 1px solid var(--line); border-radius: 20px; background: #fff; box-shadow: var(--shadow); color: var(--text); }
 .sigo-tenant-state h1 { margin: 0 0 10px; font-size: 24px; }
 .sigo-tenant-state p { margin: 0; color: var(--muted); line-height: 1.6; }
@@ -122,39 +123,82 @@ button { cursor: pointer; }
 .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 .form-error { margin: 14px 0 0; padding: 10px 12px; border-radius: 10px; background: #fff7f7; color: var(--danger) !important; font-size: 13px; }
 
+/* Matriz / Superadmin */
+.sigo-matriz-content { max-width: 1600px; }
+.sigo-matriz-kicker { display:inline-block; margin-bottom:8px; color:#2563eb; font-size:11px; font-weight:900; letter-spacing:.12em; }
+.sigo-matriz-search { width:min(380px,100%); min-height:44px; }
+.sigo-matriz-success { margin:0 0 14px; padding:10px 12px; border-radius:10px; background:#f0fdf4; color:#166534; font-size:13px; }
+.sigo-matriz-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.sigo-matriz-company { border:1px solid var(--line); border-radius:18px; padding:18px; background:#fff; box-shadow:0 7px 22px rgba(20,31,51,.04); }
+.sigo-matriz-company h4 { margin:0; font-size:18px; }
+.sigo-matriz-company p { margin:6px 0 4px; font-size:13px; }
+.sigo-matriz-company small { color:var(--muted); }
+.sigo-matriz-title-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.sigo-status { display:inline-flex; align-items:center; min-height:25px; padding:4px 9px; border-radius:999px; font-size:11px; font-weight:850; }
+.sigo-status.active { background:#ecfdf3; color:#15803d; }
+.sigo-status.suspended { background:#fff1f2; color:#be123c; }
+.sigo-status.support { background:#eef5ff; color:#1d4ed8; }
+.sigo-matriz-metrics { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0; }
+.sigo-matriz-metrics span { padding:7px 9px; border:1px solid #e8edf4; border-radius:10px; background:#f8fafc; color:#64748b; font-size:11px; }
+.sigo-matriz-metrics strong { color:#0f172a; }
+.sigo-matriz-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.sigo-return-company { white-space:nowrap; }
+
 @media (max-width: 1050px) {
   .stats { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .dashboard-grid { grid-template-columns: 1fr; }
+  .sigo-matriz-grid { grid-template-columns:1fr; }
 }
 
 @media (max-width: 760px) {
-  .sigo-tenant-bar { position: relative; align-items: stretch; flex-direction: column; padding: 12px 14px; gap: 10px; }
-  .sigo-tenant-copy span { white-space: normal; }
-  .app { display: block; }
-  .sidebar { position: relative; height: auto; padding: 14px; }
-  .brand { padding-bottom: 12px; }
-  .menu { display: flex; overflow-x: auto; padding-bottom: 2px; }
-  .menu-item { min-width: max-content; width: auto; }
-  .sidebar-bottom { display: none; }
-  .topbar { top: 0; height: auto; min-height: 70px; padding: 14px 16px; }
-  .topbar-actions { display: none; }
-  .product-actions { display: flex; width: 100%; }
-  .product-actions button { flex: 1; }
-  .content { padding: 18px 14px 34px; }
-  .welcome, .page-header { align-items: flex-start; flex-direction: column; }
-  .welcome { padding: 20px; }
-  .stats { grid-template-columns: 1fr 1fr; gap: 10px; }
-  .stat-card { min-height: 112px; padding: 16px; }
-  .quick-actions { grid-template-columns: 1fr 1fr; }
-  .product-tools { flex-direction: column; }
-  .form-grid { grid-template-columns: 1fr; }
-  .form-span-2 { grid-column: auto; }
-  .modal { padding: 18px; }
-  .form-actions { flex-direction: column-reverse; }
-  .form-actions button { width: 100%; }
+  .sigo-tenant-bar { position:sticky; top:0; align-items:stretch; flex-direction:column; padding:8px 10px 10px; gap:8px; box-shadow:0 6px 18px rgba(15,23,42,.06); }
+  .sigo-tenant-copy { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:2px 8px; }
+  .sigo-tenant-copy strong { font-size:17px; }
+  .sigo-tenant-copy span { font-size:11px; white-space:nowrap; }
+  .sigo-tenant-copy small { grid-column:1 / -1; font-size:11px; margin-top:2px; }
+  .sigo-context-actions { display:flex; overflow-x:auto; gap:6px; padding-bottom:2px; scrollbar-width:none; }
+  .sigo-context-actions::-webkit-scrollbar { display:none; }
+  .sigo-context-actions button { flex:0 0 auto; padding:8px 11px; border-radius:999px; font-size:12px; }
+  .sigo-tenant-bar > div:last-child { width:100% !important; min-width:0 !important; }
+  .sigo-return-company { width:100%; min-height:42px; }
+
+  .app { display:block; }
+  .sidebar { position:sticky; top:0; z-index:18; height:auto; padding:7px 9px; box-shadow:0 8px 24px rgba(15,23,42,.18); }
+  .brand { display:none; }
+  .menu { display:flex; gap:5px; overflow-x:auto; padding:1px 0; scrollbar-width:none; }
+  .menu::-webkit-scrollbar { display:none; }
+  .menu-item { min-width:max-content; width:auto; padding:9px 12px; border-radius:999px; font-size:13px; background:rgba(255,255,255,.035); }
+  .menu-item.active { box-shadow:none; background:#2563eb; color:#fff; }
+  .menu-icon { display:none; }
+  .sidebar-bottom { display:none; }
+  .topbar { top:48px; height:auto; min-height:60px; padding:11px 14px; }
+  .topbar > .topbar-actions { display:none; }
+  .topbar h1 { font-size:19px; }
+  .product-actions { display:flex; width:100%; }
+  .product-actions button { flex:1; }
+  .content { padding:16px 12px 30px; }
+  .welcome, .page-header { align-items:flex-start; flex-direction:column; gap:12px; }
+  .welcome { padding:18px; border-radius:18px; }
+  .welcome h2, .page-header h2 { font-size:22px; }
+  .stats { grid-template-columns:1fr 1fr; gap:9px; }
+  .stat-card { min-height:104px; padding:14px; border-radius:15px; }
+  .stat-card strong { font-size:23px; }
+  .quick-actions { grid-template-columns:1fr 1fr; }
+  .product-tools { flex-direction:column; }
+  .form-grid { grid-template-columns:1fr; }
+  .form-span-2 { grid-column:auto; }
+  .modal { padding:16px; border-radius:16px; }
+  .form-actions { flex-direction:column-reverse; }
+  .form-actions button { width:100%; }
+  .sigo-matriz-panel { padding:14px; }
+  .sigo-matriz-tools { align-items:stretch; flex-direction:column; }
+  .sigo-matriz-search { width:100%; }
+  .sigo-matriz-company { padding:15px; }
+  .sigo-matriz-actions button { flex:1 1 140px; }
 }
 
 @media (max-width: 460px) {
-  .stats, .quick-actions { grid-template-columns: 1fr; }
-  .welcome h2, .page-header h2 { font-size: 22px; }
+  .stats, .quick-actions { grid-template-columns:1fr; }
+  .welcome h2, .page-header h2 { font-size:21px; }
+  .sigo-tenant-copy span { max-width:230px; }
 }
