@@ -22,9 +22,10 @@ type BarcodeDetectorCtor = new (options?: { formats?: string[] }) => BarcodeDete
 type ScanSource = "manual" | "wedge" | "camera";
 type ScannerControlsLike = { stop(): void };
 
+// Cuando el scanner muestra selector de acción (maestro de Productos), sólo exponemos
+// acciones que ese contexto ejecuta realmente. Venta y recepción tienen scanners propios
+// dentro de sus módulos para evitar botones que aparenten operar y sólo hagan una consulta.
 const ACTIONS: Array<{ value: BarcodeAction; label: string }> = [
-  { value: "vender", label: "Vender producto" },
-  { value: "ingresar", label: "Ingresar mercadería" },
   { value: "consultar", label: "Consultar precio / stock" },
   { value: "editar", label: "Buscar / editar producto" },
 ];
