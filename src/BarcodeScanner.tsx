@@ -241,18 +241,20 @@ export default function BarcodeScanner({
 
   return (
     <section aria-label="Escáner de código de barras" style={{ display: "grid", gap: 12 }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {ACTIONS.map((item) => (
-          <button
-            key={item.value}
-            type="button"
-            onClick={() => onActionChange?.(item.value)}
-            aria-pressed={action === item.value}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      {onActionChange && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Acción del código escaneado">
+          {ACTIONS.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => onActionChange(item.value)}
+              aria-pressed={action === item.value}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input
