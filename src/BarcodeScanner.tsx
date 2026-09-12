@@ -159,7 +159,7 @@ export default function BarcodeScanner({
     async function startNativeFallback() {
       if (!detectorCtor || cancelled) {
         if (!cancelled) {
-          setError("Este navegador no pudo iniciar el lector de códigos. Podés usar pistola o ingreso manual.");
+          setError("El lector de cámara de este navegador no pudo inicializarse. Podés usar pistola o ingreso manual.");
           stopCamera();
         }
         return;
