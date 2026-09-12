@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   guardarClienteSigo,
   listarClientesSigo,
@@ -37,22 +37,37 @@ export default function ClientesOperativos({ empresaId }: { empresaId: string })
   const [cobrando, setCobrando] = useState<ClienteSigo | null>(null);
   const [importeCobro, setImporteCobro] = useState("");
   const [medioCobro, setMedioCobro] = useState<MedioCobroSigo>("efectivo");
+  const empresaActivaRef = useRef(empresaId);
 
-  async function cargar() {
+  async function cargar(targetEmpresaId = empresaId) {
     setLoading(true);
     setError("");
     try {
-      setClientes(await listarClientesSigo(empresaId));
+      const data = await listarClientesSigo(targetEmpresaId);
+      if (empresaActivaRef.current === targetEmpresaId) setClientes(data);
     } catch (err) {
+      if (empresaActivaRef.current !== targetEmpresaId) return;
       setClientes([]);
       setError(err instanceof Error ? err.message : "No se pudieron cargar los clientes.");
     } finally {
-      setLoading(false);
+      if (empresaActivaRef.current === targetEmpresaId) setLoading(false);
     }
   }
 
   useEffect(() => {
-    void cargar();
+    empresaActivaRef.current = empresaId;
+    setClientes([]);
+    setSearch("");
+    setFormOpen(false);
+    setEditing(null);
+    setForm(vacio);
+    setCobrando(null);
+    setImporteCobro("");
+    setMedioCobro("efectivo");
+    setError("");
+    void cargar(empresaId);
+    // cargar usa únicamente el empresaId capturado para evitar mezclar tenants.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresaId]);
 
   const filtrados = useMemo(() => {
@@ -103,12 +118,13 @@ export default function ClientesOperativos({ empresaId }: { empresaId: string })
 
   async function guardar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const empresaOperacion = empresaId;
     setSaving(true);
     setError("");
     try {
       await guardarClienteSigo({
         id: editing?.id,
-        empresaId,
+        empresaId: empresaOperacion,
         nombre: form.nombre,
         documento: form.documento,
         telefono: form.telefono,
@@ -116,36 +132,43 @@ export default function ClientesOperativos({ empresaId }: { empresaId: string })
         direccion: form.direccion,
         limiteCredito: form.limiteCredito.trim() ? Number(form.limiteCredito) : null,
       });
+      if (empresaActivaRef.current !== empresaOperacion) return;
       setFormOpen(false);
       setEditing(null);
       setForm(vacio);
-      await cargar();
+      await cargar(empresaOperacion);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo guardar el cliente.");
+      if (empresaActivaRef.current === empresaOperacion) {
+        setError(err instanceof Error ? err.message : "No se pudo guardar el cliente.");
+      }
     } finally {
-      setSaving(false);
+      if (empresaActivaRef.current === empresaOperacion) setSaving(false);
     }
   }
 
   async function registrarCobro() {
     if (!cobrando || cobroInvalido) return;
+    const empresaOperacion = empresaId;
     setSaving(true);
     setError("");
     try {
       await registrarCobroClienteSigo({
-        empresaId,
+        empresaId: empresaOperacion,
         clienteId: cobrando.id,
         importe: importeCobroNumero,
         medioPago: medioCobro,
       });
+      if (empresaActivaRef.current !== empresaOperacion) return;
       setCobrando(null);
       setImporteCobro("");
       setMedioCobro("efectivo");
-      await cargar();
+      await cargar(empresaOperacion);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo registrar el cobro.");
+      if (empresaActivaRef.current === empresaOperacion) {
+        setError(err instanceof Error ? err.message : "No se pudo registrar el cobro.");
+      }
     } finally {
-      setSaving(false);
+      if (empresaActivaRef.current === empresaOperacion) setSaving(false);
     }
   }
 
