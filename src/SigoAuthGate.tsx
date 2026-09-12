@@ -5,7 +5,7 @@ import { supabase } from "./supabase";
 import "./auth.css";
 
 type Props = { children: ReactNode };
-type AuthMode = "login" | "register" | "recovery";
+type AuthMode = "login" | "register" | "register_member" | "recovery";
 
 const SIGO_PRODUCTION_URL = "https://comercial-lilac.vercel.app/";
 const PENDING_EMPRESA_METADATA_KEY = "sigo_empresa_nombre";
@@ -187,6 +187,46 @@ export default function SigoAuthGate({ children }: Props) {
     setSession(data.session);
   }
 
+  async function registrarmeComoUsuario(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!comenzarSolicitud()) return;
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setError("Ingresá tu email.");
+      terminarSolicitud();
+      return;
+    }
+    if (password.length < 8) {
+      setError("La contraseña debe tener al menos 8 caracteres.");
+      terminarSolicitud();
+      return;
+    }
+
+    limpiarMensajes();
+    const { data, error: signUpError } = await supabase.auth.signUp({
+      email: normalizedEmail,
+      password,
+      options: { emailRedirectTo: SIGO_PRODUCTION_URL },
+    });
+    terminarSolicitud();
+
+    if (signUpError) {
+      setError(mensajeAcceso(signUpError.message));
+      return;
+    }
+
+    setEmail(normalizedEmail);
+    if (data.session) {
+      setSuccess("Cuenta creada. Pedile al administrador de tu empresa que agregue este email; SIGO va a detectar el acceso automáticamente.");
+      setSession(data.session);
+      return;
+    }
+
+    setSuccess("Cuenta de usuario creada. Activala desde el correo y pedile al administrador que agregue este mismo email a la empresa.");
+    setPuedeReenviarActivacion(true);
+    setMode("login");
+  }
+
   async function reenviarActivacion() {
     const normalizedEmail = email.trim().toLowerCase();
     if (!normalizedEmail || !comenzarSolicitud()) return;
@@ -261,7 +301,7 @@ export default function SigoAuthGate({ children }: Props) {
           autoComplete={autoComplete}
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          minLength={mode === "register" || mode === "recovery" ? 8 : undefined}
+          minLength={mode === "register" || mode === "register_member" || mode === "recovery" ? 8 : undefined}
           required
         />
         <button className="sigo-password-toggle" type="button" onClick={() => setShowPassword((value) => !value)}>
@@ -290,6 +330,19 @@ export default function SigoAuthGate({ children }: Props) {
               <button className="sigo-auth-submit" type="submit" disabled={submitting}>{submitting ? "Guardando…" : "Guardar contraseña"}</button>
             </form>
           </>
+        ) : mode === "register_member" ? (
+          <>
+            <h1 id="sigo-login-title">Crear cuenta de usuario</h1>
+            <p className="sigo-auth-subtitle">Usá esta opción si un administrador te va a sumar a una empresa existente. No se crea una empresa nueva.</p>
+            <form onSubmit={registrarmeComoUsuario} className="sigo-auth-form">
+              <label className="sigo-auth-field"><span>Email</span><input type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false} value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+              {campoPassword(password, setPassword, "new-password")}
+              {error ? <div className="sigo-auth-error" role="alert">{error}</div> : null}
+              {success ? <div className="sigo-auth-success" role="status">{success}</div> : null}
+              <button className="sigo-auth-submit" type="submit" disabled={submitting}>{submitting ? "Creando usuario…" : "Crear cuenta de usuario"}</button>
+              <button className="sigo-auth-secondary" type="button" onClick={() => cambiarModo("login")}>Volver al ingreso</button>
+            </form>
+          </>
         ) : mode === "register" ? (
           <>
             <h1 id="sigo-login-title">Crear cuenta</h1>
@@ -301,6 +354,7 @@ export default function SigoAuthGate({ children }: Props) {
               {error ? <div className="sigo-auth-error" role="alert">{error}</div> : null}
               {success ? <div className="sigo-auth-success" role="status">{success}</div> : null}
               <button className="sigo-auth-submit" type="submit" disabled={submitting}>{submitting ? "Creando cuenta…" : "Crear cuenta y empresa"}</button>
+              <button className="sigo-auth-secondary" type="button" onClick={() => cambiarModo("register_member")}>Me voy a sumar a una empresa</button>
               <button className="sigo-auth-secondary" type="button" onClick={() => cambiarModo("login")}>Ya tengo cuenta</button>
             </form>
           </>
@@ -315,7 +369,8 @@ export default function SigoAuthGate({ children }: Props) {
               {success ? <div className="sigo-auth-success" role="status">{success}</div> : null}
               <button className="sigo-auth-submit" type="submit" disabled={submitting}>{submitting ? "Ingresando…" : "Ingresar a SIGO"}</button>
               {puedeReenviarActivacion ? <button className="sigo-auth-secondary" type="button" disabled={submitting} onClick={() => void reenviarActivacion()}>Reenviar activación</button> : null}
-              <button className="sigo-auth-secondary" type="button" disabled={submitting} onClick={() => cambiarModo("register")}>Crear cuenta</button>
+              <button className="sigo-auth-secondary" type="button" disabled={submitting} onClick={() => cambiarModo("register")}>Crear mi empresa</button>
+              <button className="sigo-auth-secondary" type="button" disabled={submitting} onClick={() => cambiarModo("register_member")}>Crear cuenta de usuario</button>
               <button className="sigo-auth-secondary" type="button" disabled={submitting} onClick={() => void recuperarAcceso()}>Recuperar acceso</button>
             </form>
           </>
