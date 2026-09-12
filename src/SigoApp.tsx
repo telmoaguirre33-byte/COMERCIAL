@@ -261,13 +261,13 @@ function Productos({ empresaId, puedeEditar }: { empresaId: string; puedeEditar:
 
   async function eliminar(producto: ProductoSigo) {
     if (!puedeEditar) return;
-    if (!window.confirm(`¿Eliminar ${producto.nombre}?`)) return;
+    if (!window.confirm(`¿Dar de baja ${producto.nombre}? No se borrarán ventas, compras ni históricos y sólo se permitirá si el stock está en cero.`)) return;
     setDeletingId(producto.id);
     try {
       await eliminarProductoSigo(empresaId, producto.id);
       await cargar();
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "No se pudo eliminar el producto");
+      window.alert(err instanceof Error ? err.message : "No se pudo dar de baja el producto");
     } finally {
       setDeletingId(null);
     }
@@ -323,7 +323,7 @@ function Productos({ empresaId, puedeEditar }: { empresaId: string; puedeEditar:
                       {puedeEditar ? (
                         <div className="row-actions">
                           <button className="admin-button" onClick={() => abrirEdicion(p)}>Editar</button>
-                          <button className="admin-button danger-button" disabled={deletingId === p.id} onClick={() => void eliminar(p)}>{deletingId === p.id ? "Eliminando…" : "Eliminar"}</button>
+                          <button className="admin-button danger-button" disabled={deletingId === p.id} onClick={() => void eliminar(p)}>{deletingId === p.id ? "Dando de baja…" : "Dar de baja"}</button>
                         </div>
                       ) : "Solo lectura"}
                     </td>
