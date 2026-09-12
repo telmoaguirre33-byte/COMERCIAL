@@ -2,7 +2,6 @@ export type SigoRole =
   | "superadmin"
   | "owner"
   | "admin"
-  | "administrative"
   | "seller"
   | "warehouse"
   | "client";
@@ -66,20 +65,6 @@ const rolePermissions: Record<SigoRole, ReadonlySet<SigoPermission>> = {
     "products.write",
     "stock.read",
     "stock.write",
-    "sales.read",
-    "sales.write",
-    "purchases.read",
-    "purchases.write",
-    "clients.read",
-    "clients.write",
-    "suppliers.read",
-    "suppliers.write",
-    "reports.read",
-    "invoices.issue",
-  ]),
-  administrative: new Set<SigoPermission>([
-    "products.read",
-    "stock.read",
     "sales.read",
     "sales.write",
     "purchases.read",
