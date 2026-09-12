@@ -61,6 +61,7 @@ const rolePermissions: Record<SigoRole, ReadonlySet<SigoPermission>> = {
     "client_portal.read",
   ]),
   admin: new Set<SigoPermission>([
+    "users.manage",
     "products.read",
     "products.write",
     "stock.read",
@@ -84,12 +85,12 @@ const rolePermissions: Record<SigoRole, ReadonlySet<SigoPermission>> = {
     "clients.read",
     "invoices.issue",
   ]),
+  // Depósito opera catálogo/stock. No recibe Compras/Proveedores porque ese
+  // circuito expone costos; la recepción sin valores debe resolverse aparte.
   warehouse: new Set<SigoPermission>([
     "products.read",
     "stock.read",
     "stock.write",
-    "purchases.read",
-    "purchases.write",
   ]),
   client: new Set<SigoPermission>([
     "client_portal.read",
