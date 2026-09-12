@@ -37,6 +37,45 @@ export type VerificacionCompraSigo = {
   detalle: string;
 };
 
+function validarEmailOpcional(email?: string): string | null {
+  const limpio = email?.trim() ?? "";
+  if (!limpio) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(limpio)) {
+    throw new Error("El email del proveedor no es válido.");
+  }
+  return limpio;
+}
+
+function validarCuitOpcional(cuit?: string): string | null {
+  const limpio = cuit?.replace(/\D/g, "") ?? "";
+  if (!limpio) return null;
+  if (limpio.length !== 11) throw new Error("El CUIT del proveedor debe tener 11 dígitos.");
+  return limpio;
+}
+
+export function consolidarItemsCompra(items: CompraItemInput[]): CompraItemInput[] {
+  const agrupados = new Map<string, { cantidad: number; costoPonderado: number }>();
+
+  for (const item of items) {
+    const productoId = item.producto_id?.trim();
+    const cantidad = Number(item.cantidad);
+    const costo = Number(item.costo_unitario);
+    if (!productoId || !Number.isFinite(cantidad) || cantidad <= 0 || !Number.isFinite(costo) || costo < 0) continue;
+
+    const previo = agrupados.get(productoId) ?? { cantidad: 0, costoPonderado: 0 };
+    agrupados.set(productoId, {
+      cantidad: previo.cantidad + cantidad,
+      costoPonderado: previo.costoPonderado + cantidad * costo,
+    });
+  }
+
+  return [...agrupados.entries()].map(([producto_id, valor]) => ({
+    producto_id,
+    cantidad: valor.cantidad,
+    costo_unitario: valor.cantidad > 0 ? valor.costoPonderado / valor.cantidad : 0,
+  }));
+}
+
 export async function listarProveedoresSigo(empresaId: string): Promise<ProveedorSigo[]> {
   const { data, error } = await supabase
     .from("proveedores_sigo")
@@ -57,15 +96,16 @@ export async function guardarProveedorSigo(input: {
 }): Promise<ProveedorSigo> {
   const razonSocial = input.razonSocial.trim();
   if (!razonSocial) throw new Error("La razón social es obligatoria.");
+  if (!input.empresaId?.trim()) throw new Error("No hay una empresa activa válida.");
 
   const { data, error } = await supabase
     .from("proveedores_sigo")
     .insert({
       empresa_id: input.empresaId,
       razon_social: razonSocial,
-      cuit: input.cuit?.trim() || null,
+      cuit: validarCuitOpcional(input.cuit),
       telefono: input.telefono?.trim() || null,
-      email: input.email?.trim() || null,
+      email: validarEmailOpcional(input.email),
       activo: true,
     })
     .select("id,empresa_id,razon_social,nombre_fantasia,cuit,telefono,email,direccion,activo")
@@ -94,8 +134,11 @@ export async function confirmarCompraSigo(input: {
   numeroComprobante?: string;
   idempotencyKey: string;
 }): Promise<string> {
-  const items = input.items.filter((item) => item.producto_id && item.cantidad > 0 && item.costo_unitario >= 0);
-  if (!input.proveedorId) throw new Error("Seleccioná un proveedor.");
+  if (!input.empresaId?.trim()) throw new Error("No hay una empresa activa válida.");
+  if (!input.proveedorId?.trim()) throw new Error("Seleccioná un proveedor.");
+  if (!input.idempotencyKey?.trim()) throw new Error("No se pudo generar una clave segura para confirmar la compra.");
+
+  const items = consolidarItemsCompra(input.items);
   if (items.length === 0) throw new Error("Agregá al menos un producto válido.");
 
   const { data, error } = await supabase.rpc("confirmar_compra_sigo", {
@@ -105,7 +148,7 @@ export async function confirmarCompraSigo(input: {
     p_fecha: input.fecha || null,
     p_tipo_comprobante: input.tipoComprobante?.trim() || null,
     p_numero_comprobante: input.numeroComprobante?.trim() || null,
-    p_idempotency_key: input.idempotencyKey,
+    p_idempotency_key: input.idempotencyKey.trim(),
   });
   if (error) {
     const msg = error.message || "No se pudo confirmar la compra";
@@ -125,7 +168,10 @@ export async function verificarCompraSigo(input: {
   stockAntes: Record<string, number>;
 }): Promise<VerificacionCompraSigo> {
   try {
-    const productoIds = [...new Set(input.items.map((item) => item.producto_id))];
+    const items = consolidarItemsCompra(input.items);
+    if (items.length === 0) return { estado: "REVISAR", detalle: "No hay ítems válidos para conciliar la compra." };
+
+    const productoIds = [...new Set(items.map((item) => item.producto_id))];
     const [{ data: compra, error: compraError }, { data: detalles, error: detalleError }, { data: productos, error: productoError }] = await Promise.all([
       supabase
         .from("compras_sigo")
@@ -155,7 +201,7 @@ export async function verificarCompraSigo(input: {
     const detalleMap = new Map((detalles ?? []).map((d) => [String(d.producto_id), d]));
     const productoMap = new Map((productos ?? []).map((p) => [String(p.id), p]));
 
-    for (const item of input.items) {
+    for (const item of items) {
       const detalle = detalleMap.get(item.producto_id);
       const producto = productoMap.get(item.producto_id);
       if (!detalle || !producto) {
