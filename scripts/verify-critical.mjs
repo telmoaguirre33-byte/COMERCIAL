@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 
 const checks = [
   {
@@ -36,8 +37,8 @@ const checks = [
   },
   {
     file: 'src/barcode.ts',
-    required: ['codigo_barras', 'codigo_interno'],
-    label: 'barcode lookup by barcode/internal code',
+    required: ['codigo_barras', 'codigo_interno', 'normalizarEmpresaId', 'TENANT_PRODUCT_MISMATCH', 'fueraDeTenant', 'replace(/[\\u0000-\\u001F\\u007F]/g'],
+    label: 'barcode lookup normalization and tenant-response isolation',
   },
   {
     file: 'src/productos.ts',
@@ -114,6 +115,30 @@ for (const check of checks) {
     console.log(`PASS ${check.label}`);
   }
 }
+
+const projectRoots = ['src', 'supabase', 'docs'];
+const textExtensions = new Set(['.ts', '.tsx', '.css', '.sql', '.md']);
+for (const root of projectRoots) {
+  const pending = [root];
+  while (pending.length) {
+    const current = pending.pop();
+    if (!current || !fs.existsSync(current)) continue;
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(fullPath);
+        continue;
+      }
+      if (!textExtensions.has(path.extname(entry.name))) continue;
+      const content = fs.readFileSync(fullPath, 'utf8');
+      if (/\bSOVI\b/i.test(content)) {
+        console.error(`FAIL project boundary: SOVI reference found in ${fullPath}`);
+        failed = true;
+      }
+    }
+  }
+}
+if (!failed) console.log('PASS project boundary: no SOVI contamination in SIGO code/docs/migrations');
 
 if (failed) process.exit(1);
 console.log('SIGO_CRITICAL_FLOW_STATIC_CHECKS_OK');
