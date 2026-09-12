@@ -1,4 +1,5 @@
 const MAX_DATA_URL_LENGTH = 8_000_000;
+const MAX_INVOICE_ITEMS = 300;
 const ALLOWED_IMAGE = /^data:image\/(jpeg|jpg|png|webp);base64,/i;
 
 function json(res, status, body) {
@@ -19,6 +20,73 @@ function getOutputText(data) {
 function parseJsonText(text) {
   const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   return JSON.parse(cleaned);
+}
+
+function textoSeguro(value, max = 180) {
+  if (value == null) return null;
+  const texto = String(value).trim().replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ");
+  return texto ? texto.slice(0, max) : null;
+}
+
+function numeroSeguro(value, { min = 0, max = 1_000_000_000_000, nullable = false } = {}) {
+  if (value == null || value === "") return nullable ? null : NaN;
+  const numero = Number(value);
+  if (!Number.isFinite(numero) || numero < min || numero > max) return nullable ? null : NaN;
+  return numero;
+}
+
+function confianza(value) {
+  const numero = Number(value);
+  if (!Number.isFinite(numero)) return 0;
+  return Math.max(0, Math.min(1, numero));
+}
+
+function normalizarFacturaIA(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("INVALID_INVOICE_OBJECT");
+
+  const proveedorRaw = raw.proveedor && typeof raw.proveedor === "object" && !Array.isArray(raw.proveedor)
+    ? raw.proveedor
+    : {};
+  const cuitLeido = String(proveedorRaw.cuit ?? "").replace(/\D/g, "");
+  const itemsRaw = Array.isArray(raw.items) ? raw.items.slice(0, MAX_INVOICE_ITEMS) : [];
+  const items = [];
+
+  for (const item of itemsRaw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const descripcion = textoSeguro(item.descripcion, 240);
+    const cantidad = numeroSeguro(item.cantidad, { min: 0.000001, max: 1_000_000 });
+    const costoUnitario = numeroSeguro(item.costo_unitario, { min: 0, max: 1_000_000_000_000 });
+    if (!descripcion || !Number.isFinite(cantidad) || !Number.isFinite(costoUnitario)) continue;
+
+    items.push({
+      descripcion,
+      codigo: textoSeguro(item.codigo, 80),
+      codigo_barras: textoSeguro(item.codigo_barras, 80),
+      cantidad,
+      costo_unitario: costoUnitario,
+      total_linea: numeroSeguro(item.total_linea, { min: 0, max: 1_000_000_000_000, nullable: true }),
+      confianza: confianza(item.confianza),
+    });
+  }
+
+  if (items.length === 0) throw new Error("NO_VALID_INVOICE_ITEMS");
+
+  const fechaTexto = textoSeguro(raw.fecha, 16);
+  const fecha = fechaTexto && /^\d{4}-\d{2}-\d{2}$/.test(fechaTexto) ? fechaTexto : null;
+
+  return {
+    proveedor: {
+      razon_social: textoSeguro(proveedorRaw.razon_social, 180),
+      cuit: cuitLeido.length === 11 ? cuitLeido : null,
+    },
+    fecha,
+    tipo_comprobante: textoSeguro(raw.tipo_comprobante, 60),
+    numero_comprobante: textoSeguro(raw.numero_comprobante, 80),
+    moneda: textoSeguro(raw.moneda, 12),
+    total: numeroSeguro(raw.total, { min: 0, max: 1_000_000_000_000, nullable: true }),
+    confianza_general: confianza(raw.confianza_general),
+    items,
+  };
 }
 
 async function validarUsuarioYPermiso(req, empresaId) {
@@ -110,10 +178,10 @@ confianza_general y confianza van de 0 a 1.`;
     const aiData = await aiResponse.json();
     const text = getOutputText(aiData);
     if (!text) throw new Error("EMPTY_AI_OUTPUT");
-    const factura = parseJsonText(text);
+    const factura = normalizarFacturaIA(parseJsonText(text));
     return json(res, 200, { factura, model });
   } catch (error) {
     console.error("SIGO invoice parse error", error);
-    return json(res, 502, { error: "AI_INVALID_OUTPUT", message: "La IA respondió, pero no se pudo interpretar la factura." });
+    return json(res, 502, { error: "AI_INVALID_OUTPUT", message: "La IA respondió, pero no devolvió una factura segura y utilizable." });
   }
 }
