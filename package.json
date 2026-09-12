@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "verify:critical": "node scripts/verify-critical.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
