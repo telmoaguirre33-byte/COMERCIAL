@@ -55,37 +55,28 @@ jobs:
         run: |
           set -euo pipefail
           endpoint="https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/config/auth"
-          current="$(curl -fsS "$endpoint" \
-            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}")"
-
+          current="$(curl -fsS "$endpoint" -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}")"
           current_allow="$(printf '%s' "$current" | jq -r '.uri_allow_list // ""')"
           desired_root="${SIGO_PRODUCTION_URL}"
           desired_wildcard="${SIGO_PRODUCTION_URL}**"
+          merged_allow="$current_allow"
 
-          merged_allow="$(python3 - "$current_allow" "$desired_root" "$desired_wildcard" <<'PY'
-import sys
-items = []
-for raw in sys.argv[1:]:
-    for item in raw.split(','):
-        item = item.strip()
-        if item and item not in items:
-            items.append(item)
-print(','.join(items))
-PY
-)"
+          case ",${merged_allow}," in
+            *",${desired_root},"*) ;;
+            *) merged_allow="${merged_allow:+${merged_allow},}${desired_root}" ;;
+          esac
+          case ",${merged_allow}," in
+            *",${desired_wildcard},"*) ;;
+            *) merged_allow="${merged_allow:+${merged_allow},}${desired_wildcard}" ;;
+          esac
 
-          payload="$(jq -n \
-            --arg site "$SIGO_PRODUCTION_URL" \
-            --arg allow "$merged_allow" \
-            '{site_url: $site, uri_allow_list: $allow}')"
-
+          payload="$(jq -n --arg site "$SIGO_PRODUCTION_URL" --arg allow "$merged_allow" '{site_url: $site, uri_allow_list: $allow}')"
           curl -fsS -X PATCH "$endpoint" \
             -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
             -H "Content-Type: application/json" \
             --data "$payload" >/dev/null
 
-          verified="$(curl -fsS "$endpoint" \
-            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}")"
+          verified="$(curl -fsS "$endpoint" -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}")"
           verified_site="$(printf '%s' "$verified" | jq -r '.site_url // ""')"
           verified_allow="$(printf '%s' "$verified" | jq -r '.uri_allow_list // ""')"
 
