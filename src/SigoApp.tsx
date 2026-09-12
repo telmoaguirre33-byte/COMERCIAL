@@ -3,6 +3,7 @@ import type { EmpresaOperativa } from "./tenant";
 import BarcodeScanner from "./BarcodeScanner";
 import type { BarcodeAction, BarcodeProduct } from "./barcode";
 import VentaRapidaOperativa from "./VentaRapidaOperativa";
+import { can } from "./permissions";
 import {
   eliminarProductoSigo,
   guardarProductoSigo,
@@ -20,6 +21,9 @@ type ProductoForm = {
   codigoBarras: string;
   categoria: string;
   marca: string;
+  precioVenta: string;
+  stockMinimo: string;
+  stockMaximo: string;
 };
 
 const productoVacio: ProductoForm = {
@@ -28,10 +32,22 @@ const productoVacio: ProductoForm = {
   codigoBarras: "",
   categoria: "",
   marca: "",
+  precioVenta: "",
+  stockMinimo: "",
+  stockMaximo: "",
 };
+
+function numeroOpcional(valor: string, etiqueta: string): number | null {
+  const limpio = valor.trim();
+  if (!limpio) return null;
+  const numero = Number(limpio);
+  if (!Number.isFinite(numero) || numero < 0) throw new Error(`${etiqueta} debe ser un número igual o mayor a cero.`);
+  return numero;
+}
 
 export default function SigoApp({ empresa }: { empresa: EmpresaOperativa }) {
   const [section, setSection] = useState<Section>("Inicio");
+  const puedeEditarProductos = can(empresa.rol, "products.write");
 
   return (
     <div className="app">
@@ -71,7 +87,7 @@ export default function SigoApp({ empresa }: { empresa: EmpresaOperativa }) {
         </header>
         <section className="content">
           {section === "Inicio" && <Inicio empresa={empresa} onProductos={() => setSection("Productos")} onStock={() => setSection("Stock")} />}
-          {section === "Productos" && <Productos empresaId={empresa.empresa_id} />}
+          {section === "Productos" && <Productos empresaId={empresa.empresa_id} puedeEditar={puedeEditarProductos} />}
           {section === "Stock" && <Stock empresaId={empresa.empresa_id} />}
           {section === "Ventas" && <VentaRapidaOperativa empresaId={empresa.empresa_id} />}
           {section !== "Inicio" && section !== "Productos" && section !== "Stock" && section !== "Ventas" && <Pendiente title={section} />}
@@ -96,7 +112,7 @@ function Inicio({ empresa, onProductos, onStock }: { empresa: EmpresaOperativa; 
   );
 }
 
-function Productos({ empresaId }: { empresaId: string }) {
+function Productos({ empresaId, puedeEditar }: { empresaId: string; puedeEditar: boolean }) {
   const [productos, setProductos] = useState<ProductoSigo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -127,6 +143,10 @@ function Productos({ empresaId }: { empresaId: string }) {
     void cargar();
   }, [empresaId]);
 
+  useEffect(() => {
+    if (!puedeEditar && scanAction !== "consultar") setScanAction("consultar");
+  }, [puedeEditar, scanAction]);
+
   const filtrados = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return productos;
@@ -135,6 +155,7 @@ function Productos({ empresaId }: { empresaId: string }) {
   }, [productos, search]);
 
   function abrirNuevo() {
+    if (!puedeEditar) return;
     setEditing(null);
     setForm(productoVacio);
     setFormError("");
@@ -142,6 +163,7 @@ function Productos({ empresaId }: { empresaId: string }) {
   }
 
   function abrirEdicion(producto: ProductoSigo) {
+    if (!puedeEditar) return;
     setEditing(producto);
     setForm({
       nombre: producto.nombre,
@@ -149,6 +171,9 @@ function Productos({ empresaId }: { empresaId: string }) {
       codigoBarras: producto.codigo_barras ?? "",
       categoria: producto.categoria ?? "",
       marca: producto.marca ?? "",
+      precioVenta: producto.precio_venta == null ? "" : String(producto.precio_venta),
+      stockMinimo: producto.stock_minimo == null ? "" : String(producto.stock_minimo),
+      stockMaximo: producto.stock_maximo == null ? "" : String(producto.stock_maximo),
     });
     setFormError("");
     setFormOpen(true);
@@ -165,7 +190,7 @@ function Productos({ empresaId }: { empresaId: string }) {
   function handleScan(producto: BarcodeProduct, action: BarcodeAction) {
     setScanResult(producto);
     setSearch(producto.codigo_barras || producto.codigo_interno || producto.nombre);
-    if (action === "editar") {
+    if (action === "editar" && puedeEditar) {
       const original = productos.find((item) => item.id === producto.id);
       if (original) abrirEdicion(original);
     }
@@ -173,8 +198,33 @@ function Productos({ empresaId }: { empresaId: string }) {
 
   async function guardar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!puedeEditar) {
+      setFormError("Tu perfil tiene acceso de consulta, pero no puede modificar productos.");
+      return;
+    }
     if (!form.nombre.trim()) {
       setFormError("El nombre del producto es obligatorio.");
+      return;
+    }
+
+    let precioVenta: number | null;
+    let stockMinimo: number | null;
+    let stockMaximo: number | null;
+    try {
+      precioVenta = numeroOpcional(form.precioVenta, "El precio de venta");
+      stockMinimo = numeroOpcional(form.stockMinimo, "El stock mínimo");
+      stockMaximo = numeroOpcional(form.stockMaximo, "El stock máximo");
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Revisá los valores numéricos del producto.");
+      return;
+    }
+
+    if (!editing && precioVenta == null) {
+      setFormError("Ingresá el precio de venta para que el producto quede listo para vender.");
+      return;
+    }
+    if (stockMinimo != null && stockMaximo != null && stockMaximo < stockMinimo) {
+      setFormError("El stock máximo no puede ser menor que el stock mínimo.");
       return;
     }
 
@@ -191,14 +241,14 @@ function Productos({ empresaId }: { empresaId: string }) {
         marca: form.marca,
         descripcion: editing?.descripcion ?? null,
         proveedor: editing?.proveedor ?? null,
-        costoActual: editing?.costo_actual ?? null,
-        costoUltimaCompra: editing?.costo_ultima_compra ?? null,
-        precioVenta: editing?.precio_venta ?? null,
-        margenGanancia: editing?.margen_ganancia ?? null,
-        margenPorcentaje: editing?.margen_porcentaje ?? null,
-        stockActual: editing?.stock_actual ?? null,
-        stockMinimo: editing?.stock_minimo ?? null,
-        stockMaximo: editing?.stock_maximo ?? null,
+        costoActual: null,
+        costoUltimaCompra: null,
+        precioVenta,
+        margenGanancia: null,
+        margenPorcentaje: null,
+        stockActual: null,
+        stockMinimo,
+        stockMaximo,
       });
       cerrarForm();
       await cargar();
@@ -210,6 +260,7 @@ function Productos({ empresaId }: { empresaId: string }) {
   }
 
   async function eliminar(producto: ProductoSigo) {
+    if (!puedeEditar) return;
     if (!window.confirm(`¿Eliminar ${producto.nombre}?`)) return;
     setDeletingId(producto.id);
     try {
@@ -231,14 +282,19 @@ function Productos({ empresaId }: { empresaId: string }) {
         </div>
         <div className="topbar-actions product-actions">
           <button className="admin-button" onClick={() => void cargar()}>Actualizar</button>
-          <button className="primary-button" onClick={abrirNuevo}>Nuevo producto</button>
+          {puedeEditar ? <button className="primary-button" onClick={abrirNuevo}>Nuevo producto</button> : <span>Modo solo lectura</span>}
         </div>
       </div>
 
       <div className="panel">
         <h3>Buscar por código</h3>
         <p>Pistola USB/Bluetooth, ingreso manual o cámara del celular.</p>
-        <BarcodeScanner empresaId={empresaId} action={scanAction} onActionChange={setScanAction} onProduct={handleScan} />
+        <BarcodeScanner
+          empresaId={empresaId}
+          action={puedeEditar ? scanAction : "consultar"}
+          onActionChange={puedeEditar ? setScanAction : undefined}
+          onProduct={handleScan}
+        />
         {scanResult && (
           <p><strong>Encontrado:</strong> {scanResult.nombre} · Stock {scanResult.stock_actual ?? "restringido"} · Precio {scanResult.precio_venta == null ? "restringido" : `$ ${Number(scanResult.precio_venta).toLocaleString("es-AR")}`}</p>
         )}
@@ -264,10 +320,12 @@ function Productos({ empresaId }: { empresaId: string }) {
                     <td>{p.precio_venta == null ? "Restringido" : `$ ${Number(p.precio_venta).toLocaleString("es-AR")}`}</td>
                     <td>{p.stock_actual == null ? "Restringido" : p.stock_actual}</td>
                     <td>
-                      <div className="row-actions">
-                        <button className="admin-button" onClick={() => abrirEdicion(p)}>Editar</button>
-                        <button className="admin-button danger-button" disabled={deletingId === p.id} onClick={() => void eliminar(p)}>{deletingId === p.id ? "Eliminando…" : "Eliminar"}</button>
-                      </div>
+                      {puedeEditar ? (
+                        <div className="row-actions">
+                          <button className="admin-button" onClick={() => abrirEdicion(p)}>Editar</button>
+                          <button className="admin-button danger-button" disabled={deletingId === p.id} onClick={() => void eliminar(p)}>{deletingId === p.id ? "Eliminando…" : "Eliminar"}</button>
+                        </div>
+                      ) : "Solo lectura"}
                     </td>
                   </tr>
                 ))}
@@ -278,13 +336,13 @@ function Productos({ empresaId }: { empresaId: string }) {
         </div>
       )}
 
-      {formOpen && (
+      {formOpen && puedeEditar && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) cerrarForm(); }}>
           <div className="modal" role="dialog" aria-modal="true" aria-labelledby="producto-form-title">
             <div className="page-header modal-header">
               <div>
                 <h2 id="producto-form-title">{editing ? "Editar producto" : "Nuevo producto"}</h2>
-                <p>{editing ? "Los campos no editados se preservan." : "Alta segura dentro de la empresa activa."}</p>
+                <p>{editing ? "Editá el maestro sin alterar el stock actual ni los costos de compras." : "Alta lista para vender. El stock se ingresa por Compras para conservar trazabilidad."}</p>
               </div>
               <button type="button" className="admin-button" onClick={cerrarForm} disabled={saving}>Cerrar</button>
             </div>
@@ -309,6 +367,21 @@ function Productos({ empresaId }: { empresaId: string }) {
                 <div className="form-group">
                   <label htmlFor="producto-marca">Marca</label>
                   <input id="producto-marca" value={form.marca} onChange={(e) => setForm((actual) => ({ ...actual, marca: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="producto-precio">Precio de venta {editing ? "" : "*"}</label>
+                  <input id="producto-precio" type="number" min="0" step="0.01" inputMode="decimal" value={form.precioVenta} onChange={(e) => setForm((actual) => ({ ...actual, precioVenta: e.target.value }))} required={!editing} />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="producto-stock-min">Stock mínimo</label>
+                  <input id="producto-stock-min" type="number" min="0" step="0.001" inputMode="decimal" value={form.stockMinimo} onChange={(e) => setForm((actual) => ({ ...actual, stockMinimo: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="producto-stock-max">Stock máximo</label>
+                  <input id="producto-stock-max" type="number" min="0" step="0.001" inputMode="decimal" value={form.stockMaximo} onChange={(e) => setForm((actual) => ({ ...actual, stockMaximo: e.target.value }))} />
+                </div>
+                <div className="form-group form-span-2">
+                  <small>El stock actual no se edita acá: se incrementa desde Compras y se descuenta desde Ventas para no perder trazabilidad.</small>
                 </div>
               </div>
               {formError && <p className="form-error" role="alert">{formError}</p>}
