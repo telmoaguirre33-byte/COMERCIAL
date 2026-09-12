@@ -55,6 +55,11 @@ const checks = [
     label: 'transactional sale, payment validation and duplicate-item consolidation',
   },
   {
+    file: 'src/compras.ts',
+    required: ['consolidarItemsCompra', 'Number.isFinite', 'validarEmailOpcional', 'validarCuitOpcional', 'idempotencyKey', 'confirmar_compra_sigo'],
+    label: 'purchase/supplier validation and duplicate-item consolidation',
+  },
+  {
     file: 'src/InformesOperativos.tsx',
     required: ['empresaActivaRef', 'cargaRef'],
     label: 'reports tenant isolation',
