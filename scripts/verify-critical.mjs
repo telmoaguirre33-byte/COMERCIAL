@@ -47,13 +47,13 @@ const checks = [
   },
   {
     file: 'src/productos.ts',
-    required: ['validarNumeroNoNegativo', 'STOCK_RANGE_INVALID', 'STOCK_ABOVE_MAXIMUM', 'guardar_producto_sigo'],
-    label: 'product numeric and stock-range validation',
+    required: ['validarNumeroNoNegativo', 'STOCK_RANGE_INVALID', 'STOCK_ABOVE_MAXIMUM', 'guardar_producto_sigo', 'PRODUCT_HAS_STOCK', 'BARCODE_DUPLICATE_IN_COMPANY', 'No se pudo dar de baja el producto.'],
+    label: 'product validation and user-safe lifecycle errors',
   },
   {
     file: 'src/SigoApp.tsx',
-    required: ['puedeEditarProductos', 'can(empresa.rol, "products.write")', 'Precio de venta', 'stockActual: null', 'Modo solo lectura', 'El stock actual no se edita acá', 'required={!editing}'],
-    label: 'sellable product setup, read-only warehouse UX and no direct live-stock overwrite',
+    required: ['puedeEditarProductos', 'can(empresa.rol, "products.write")', 'Precio de venta', 'stockActual: null', 'Modo solo lectura', 'El stock actual no se edita acá', 'required={!editing}', 'Dar de baja', 'No se borrarán ventas, compras ni históricos'],
+    label: 'sellable product setup, safe deactivation UX, read-only warehouse UX and no direct live-stock overwrite',
   },
   {
     file: 'src/clientes.ts',
@@ -106,6 +106,12 @@ const checks = [
     required: ['p_stock_actual is not null', 'else p.stock_actual', 'p_costo_actual is not null', 'else p.costo_actual', 'v_puede_precio', 'p.empresa_id = p_empresa_id'],
     forbidden: ['delete from public.productos', 'truncate'],
     label: 'product master edits preserve concurrent stock and purchase costs',
+  },
+  {
+    file: 'supabase/migrations/20260912151800_productos_baja_logica_segura.sql',
+    required: ['add column if not exists activo boolean', 'PRODUCT_HAS_STOCK', 'PRODUCT_INACTIVE', 'proteger_producto_inactivo_sigo', 'set activo = false', 'reactivar_producto_sigo', 'and p.activo = true'],
+    forbidden: ['delete from public.productos', 'truncate'],
+    label: 'product deactivation preserves history, requires zero stock and blocks inactive stock mutation',
   },
   {
     file: 'supabase/migrations/20260912111800_evitar_codigos_duplicados_por_empresa.sql',
