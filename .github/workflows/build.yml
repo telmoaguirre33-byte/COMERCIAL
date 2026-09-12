@@ -22,8 +22,8 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Verify critical SIGO flow
-        run: npm run verify:critical
-
       - name: Build SIGO
         run: npm run build
+
+      - name: Verify critical SIGO flow
+        run: npm run verify:critical
