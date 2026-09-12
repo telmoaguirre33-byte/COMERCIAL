@@ -15,13 +15,13 @@ const checks = [
   },
   {
     file: 'src/workspacePermissions.ts',
-    required: ['owner:', 'admin:', 'seller:', 'warehouse:', 'client:'],
+    required: ['owner:', 'admin:', 'seller:', 'warehouse:', 'client:', 'seller: ["operacion"]', 'warehouse: ["operacion"]', 'client: []'],
     forbidden: ['administrative:'],
     label: 'workspace/backend role contract',
   },
   {
     file: 'src/permissions.ts',
-    required: ['"superadmin"', '"owner"', '"admin"', '"seller"', '"warehouse"', '"client"', 'costs.read', 'margins.read', 'price_lists.read'],
+    required: ['"superadmin"', '"owner"', '"admin"', '"seller"', '"warehouse"', '"client"', 'costs.read', 'margins.read', 'price_lists.read', '"users.manage"'],
     forbidden: ['"administrative"'],
     label: 'permission/backend role contract',
   },
@@ -32,8 +32,8 @@ const checks = [
   },
   {
     file: 'src/BarcodeScanner.tsx',
-    required: ['getUserMedia', 'BarcodeDetector', 'onProduct', 'ScanSource = "manual" | "wedge" | "camera"', 'empresaActivaRef'],
-    label: 'manual/wedge/mobile-camera barcode scanner with tenant isolation',
+    required: ['getUserMedia', 'BarcodeDetector', 'onProduct', 'ScanSource = "manual" | "wedge" | "camera"', 'empresaActivaRef', 'onActionChange && (', '📷 Escanear con cámara', 'Pistola USB/Bluetooth'],
+    label: 'manual/wedge/mobile-camera barcode scanner with tenant isolation and context-safe actions',
   },
   {
     file: 'src/barcode.ts',
@@ -79,6 +79,11 @@ const checks = [
     file: 'supabase/migrations/20260912032000_precio_venta_para_operacion.sql',
     required: ["'sales.read'", "'sales.write'", "'price_lists.read'", 'p.precio_venta', 'p.costo_actual', 'p.margen_ganancia'],
     label: 'operational sale price without sensitive commercial data',
+  },
+  {
+    file: 'supabase/migrations/20260912111800_evitar_codigos_duplicados_por_empresa.sql',
+    required: ['validar_codigo_producto_unico_sigo', 'BARCODE_DUPLICATE_IN_COMPANY', 'INTERNAL_CODE_DUPLICATE_IN_COMPANY', 'before insert or update', 'p.empresa_id = new.empresa_id'],
+    label: 'new product-code collisions blocked per tenant without destructive cleanup',
   },
   {
     file: 'supabase/migrations/20260910110800_mis_empresas_operativas.sql',
