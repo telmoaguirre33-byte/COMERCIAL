@@ -27,13 +27,21 @@ export type BarcodeProduct = {
 };
 
 export function normalizeBarcode(raw: string): string {
-  return String(raw ?? "").trim().slice(0, 128);
+  return String(raw ?? "")
+    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .trim()
+    .slice(0, 128);
+}
+
+function normalizarEmpresaId(raw: string): string {
+  return String(raw ?? "").trim();
 }
 
 export async function buscarProductoPorCodigo(
-  empresaId: string,
+  empresaIdRaw: string,
   codigoRaw: string,
 ): Promise<BarcodeProduct[]> {
+  const empresaId = normalizarEmpresaId(empresaIdRaw);
   const codigo = normalizeBarcode(codigoRaw);
 
   if (!empresaId) {
@@ -56,7 +64,16 @@ export async function buscarProductoPorCodigo(
     throw error;
   }
 
-  return (data ?? []) as BarcodeProduct[];
+  const productos = (data ?? []) as BarcodeProduct[];
+  const fueraDeTenant = productos.some(
+    (producto) => normalizarEmpresaId(producto.empresa_id) !== empresaId,
+  );
+  if (fueraDeTenant) {
+    console.error("SIGO tenant isolation violation in barcode lookup", { empresaId });
+    throw new Error("TENANT_PRODUCT_MISMATCH");
+  }
+
+  return productos;
 }
 
 export function routeForBarcodeAction(
