@@ -26,7 +26,7 @@ const checks = [
   },
   {
     file: 'src/TenantSwitcher.tsx',
-    required: ['requestSeqRef', 'supabase.auth.getUser', 'cargarEmpresasVisibles'],
+    required: ['requestRef', 'supabase.auth.getUser', 'cargarMisEmpresas'],
     label: 'tenant switcher ignores stale refreshes',
   },
   {
@@ -56,7 +56,7 @@ const checks = [
   },
   {
     file: 'src/InformesOperativos.tsx',
-    required: ['empresaActivaRef', 'requestSeqRef'],
+    required: ['empresaActivaRef', 'cargaRef'],
     label: 'reports tenant isolation',
   },
   {
