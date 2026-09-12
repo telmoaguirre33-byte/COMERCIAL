@@ -5,7 +5,10 @@ export type SigoWorkspace = "operacion" | "clientes" | "compras" | "informes";
 const WORKSPACES_BY_ROLE: Record<RolEmpresaSigo, readonly SigoWorkspace[]> = {
   owner: ["operacion", "clientes", "compras", "informes"],
   admin: ["operacion", "clientes", "compras", "informes"],
-  seller: ["operacion", "clientes"],
+  // Vendedor usa clientes dentro del flujo de venta, pero no entra al workspace
+  // completo de cuentas corrientes hasta disponer de una vista estrictamente
+  // de solo lectura acorde a clients.read.
+  seller: ["operacion"],
   // Depósito opera catálogo/stock, pero no entra a Compras para no exponer costos
   // hasta disponer de una vista de recepción específica sin valores sensibles.
   warehouse: ["operacion"],
