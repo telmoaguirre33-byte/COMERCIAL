@@ -33,6 +33,7 @@ function nombreMedio(medio: string) {
     debito: "Débito",
     credito: "Crédito",
     transferencia: "Transferencia",
+    mercado_pago: "Mercado Pago",
     cuenta_corriente: "Cuenta corriente",
     otro: "Otro",
   };
@@ -138,12 +139,12 @@ export default function InformesOperativos({ empresaId }: { empresaId: string })
           <div className="stats-grid">
             <div className="stat-card"><span>Ventas de hoy</span><strong>{resumen.ventasHoy}</strong><small>{dinero(resumen.ventasHoyTotal)}</small></div>
             <div className="stat-card"><span>Caja de hoy</span><strong>{dinero(resumen.cajaHoyNeto)}</strong><small>Ingresos {dinero(resumen.cajaHoyIngresos)} · Egresos {dinero(resumen.cajaHoyEgresos)}</small></div>
-            <div className="stat-card"><span>Ventas registradas</span><strong>{resumen.ventasCantidad}</strong><small>{dinero(resumen.ventasTotal)}</small></div>
-            <div className="stat-card"><span>Compras registradas</span><strong>{resumen.comprasCantidad}</strong><small>{dinero(resumen.comprasTotal)}</small></div>
+            <div className="stat-card"><span>Ventas confirmadas</span><strong>{resumen.ventasCantidad}</strong><small>{dinero(resumen.ventasTotal)}</small></div>
+            <div className="stat-card"><span>Compras confirmadas</span><strong>{resumen.comprasCantidad}</strong><small>{dinero(resumen.comprasTotal)}</small></div>
             <div className="stat-card"><span>Unidades en stock</span><strong>{resumen.unidadesStock}</strong><small>{resumen.productos} productos</small></div>
             <div className="stat-card"><span>Stock crítico</span><strong>{resumen.productosCriticos}</strong><small>{resumen.productosSinStock} sin stock</small></div>
             <div className="stat-card"><span>Clientes</span><strong>{resumen.clientes}</strong><small>{resumen.clientesConDeuda} con deuda</small></div>
-            <div className="stat-card"><span>Saldo a cobrar</span><strong>{dinero(resumen.saldoClientes)}</strong><small>Cuenta corriente</small></div>
+            <div className="stat-card"><span>Saldo a cobrar</span><strong>{dinero(resumen.saldoClientes)}</strong><small>Sólo saldos deudores de cuenta corriente</small></div>
           </div>
 
           <div className="panel">
@@ -166,7 +167,7 @@ export default function InformesOperativos({ empresaId }: { empresaId: string })
           <div className="panel">
             <h3>Lectura gerencial rápida</h3>
             <p>
-              SIGO consolida ventas, caja, compras, stock y cuentas corrientes sin mezclar empresas. Además valida en tiempo de ejecución si la base productiva tiene disponibles los bloques críticos, para distinguir un módulo vacío de una migración faltante o un problema de permisos.
+              SIGO consolida ventas confirmadas, caja, compras confirmadas, stock y cuentas corrientes sin mezclar empresas. Además valida en tiempo de ejecución si la base productiva tiene disponibles los bloques críticos, para distinguir un módulo vacío de una migración faltante o un problema de permisos.
             </p>
           </div>
         </>
