@@ -25,7 +25,8 @@ export async function cargarPortalClienteSigo(empresaId: string): Promise<Portal
   const { data, error } = await supabase.rpc("portal_cliente_catalogo_sigo", { p_empresa_id: empresaId });
   if (error) {
     const normalized = error.message.toUpperCase();
-    if (normalized.includes("PORTAL_FORBIDDEN")) throw new Error("Tu cuenta todavía no está vinculada a un cliente de esta empresa.");
+    if (normalized.includes("PORTAL_LINK_AMBIGUOUS")) throw new Error("Tu acceso al Portal Cliente tiene una vinculación inconsistente. Pedile al administrador de la empresa que seleccione nuevamente tu cliente.");
+    if (normalized.includes("PORTAL_FORBIDDEN")) throw new Error("Tu cuenta todavía no está vinculada a un cliente activo de esta empresa.");
     if (normalized.includes("AUTH_REQUIRED")) throw new Error("Tu sesión venció. Volvé a ingresar.");
     throw new Error("No pudimos cargar tu portal. Intentá nuevamente.");
   }
