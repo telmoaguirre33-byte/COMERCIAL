@@ -9,6 +9,9 @@ type AuthMode = "login" | "register" | "register_member" | "recovery";
 
 const SIGO_PRODUCTION_URL = "https://comercial-lilac.vercel.app/";
 const PENDING_EMPRESA_METADATA_KEY = "sigo_empresa_nombre";
+const ONBOARDING_MODE_METADATA_KEY = "sigo_onboarding_mode";
+const OWNER_ONBOARDING_MODE = "owner";
+const STAFF_ONBOARDING_MODE = "member";
 
 function esLimiteTemporal(errorMessage: string) {
   const normalized = errorMessage.toLowerCase();
@@ -137,7 +140,10 @@ export default function SigoAuthGate({ children }: Props) {
       password,
       options: {
         emailRedirectTo: SIGO_PRODUCTION_URL,
-        data: { [PENDING_EMPRESA_METADATA_KEY]: nombre },
+        data: {
+          [PENDING_EMPRESA_METADATA_KEY]: nombre,
+          [ONBOARDING_MODE_METADATA_KEY]: OWNER_ONBOARDING_MODE,
+        },
       },
     });
 
@@ -206,7 +212,10 @@ export default function SigoAuthGate({ children }: Props) {
     const { data, error: signUpError } = await supabase.auth.signUp({
       email: normalizedEmail,
       password,
-      options: { emailRedirectTo: SIGO_PRODUCTION_URL },
+      options: {
+        emailRedirectTo: SIGO_PRODUCTION_URL,
+        data: { [ONBOARDING_MODE_METADATA_KEY]: STAFF_ONBOARDING_MODE },
+      },
     });
     terminarSolicitud();
 
