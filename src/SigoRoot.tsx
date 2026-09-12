@@ -31,7 +31,10 @@ const WORKSPACE_LABELS: Record<SigoWorkspace, string> = {
 };
 
 const PENDING_EMPRESA_METADATA_KEY = "sigo_empresa_nombre";
+const ONBOARDING_MODE_METADATA_KEY = "sigo_onboarding_mode";
+const STAFF_ONBOARDING_MODE = "member";
 type TenantState = "loading" | "ready" | "empty" | "error";
+type EmptyTenantMode = "checking" | "member" | "owner";
 
 export default function SigoRoot() {
   const [empresaActiva, setEmpresaActiva] = useState<EmpresaOperativa | null>(null);
@@ -44,6 +47,7 @@ export default function SigoRoot() {
   const [autoProvisionando, setAutoProvisionando] = useState(false);
   const [errorEmpresa, setErrorEmpresa] = useState("");
   const [autoRetryCount, setAutoRetryCount] = useState(0);
+  const [emptyTenantMode, setEmptyTenantMode] = useState<EmptyTenantMode>("checking");
   const autoProvisionAttemptedRef = useRef(false);
 
   const permitidos = useMemo(
@@ -55,7 +59,10 @@ export default function SigoRoot() {
     setEmpresaActiva(empresa);
     setTenantReady(true);
     setWorkspace(empresa ? workspaceInicial(empresa.rol) : "operacion");
-    if (empresa) setAutoRetryCount(0);
+    if (empresa) {
+      setAutoRetryCount(0);
+      setEmptyTenantMode("checking");
+    }
   }, []);
 
   useEffect(() => {
@@ -75,6 +82,14 @@ export default function SigoRoot() {
   }, [tenantState, autoRetryCount]);
 
   useEffect(() => {
+    if (tenantState !== "empty" || empresaActiva || emptyTenantMode !== "member") return;
+    const timer = window.setInterval(() => {
+      setTenantRetryKey((value) => value + 1);
+    }, 8000);
+    return () => window.clearInterval(timer);
+  }, [tenantState, empresaActiva, emptyTenantMode]);
+
+  useEffect(() => {
     if (!tenantReady || tenantState !== "empty" || empresaActiva || autoProvisionAttemptedRef.current) return;
     autoProvisionAttemptedRef.current = true;
     let cancelled = false;
@@ -83,14 +98,25 @@ export default function SigoRoot() {
       let empresaCreadaId: string | null = null;
       setAutoProvisionando(true);
       setErrorEmpresa("");
+      setEmptyTenantMode("checking");
       try {
         const { data, error } = await supabase.auth.getUser();
         if (error) throw error;
         const user = data.user;
-        const nombrePendiente = String(user?.user_metadata?.[PENDING_EMPRESA_METADATA_KEY] ?? "").trim();
-        if (!user || !nombrePendiente) return;
+        if (!user) throw new Error("AUTH_REQUIRED");
 
-        if (!cancelled) setNuevaEmpresa(nombrePendiente);
+        const nombrePendiente = String(user.user_metadata?.[PENDING_EMPRESA_METADATA_KEY] ?? "").trim();
+        const onboardingMode = String(user.user_metadata?.[ONBOARDING_MODE_METADATA_KEY] ?? "").trim();
+
+        if (!nombrePendiente) {
+          if (!cancelled) setEmptyTenantMode(onboardingMode === STAFF_ONBOARDING_MODE ? "member" : "owner");
+          return;
+        }
+
+        if (!cancelled) {
+          setEmptyTenantMode("owner");
+          setNuevaEmpresa(nombrePendiente);
+        }
         empresaCreadaId = await crearEmpresaSigo(nombrePendiente);
         const empresas = await cargarMisEmpresas();
         const creada = resolverEmpresaActiva(empresas, empresaCreadaId, user.id);
@@ -106,10 +132,12 @@ export default function SigoRoot() {
         setTenantState("ready");
         setWorkspace(workspaceInicial(creada.rol));
         setNuevaEmpresa("");
+        setEmptyTenantMode("checking");
         setTenantRetryKey((value) => value + 1);
       } catch (error) {
         if (cancelled) return;
         console.error("No se pudo completar automáticamente el alta de empresa", error);
+        setEmptyTenantMode("owner");
         if (empresaCreadaId) {
           setErrorEmpresa("La empresa ya se creó. Estamos actualizando tu acceso; no vuelvas a crearla.");
           setTenantRetryKey((value) => value + 1);
@@ -142,10 +170,18 @@ export default function SigoRoot() {
     setErrorEmpresa("");
     let empresaId: string | null = null;
     try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) throw authError ?? new Error("AUTH_REQUIRED");
+      const onboardingMode = String(authData.user.user_metadata?.[ONBOARDING_MODE_METADATA_KEY] ?? "").trim();
+      if (onboardingMode === STAFF_ONBOARDING_MODE) {
+        setEmptyTenantMode("member");
+        setErrorEmpresa("Esta cuenta fue creada para sumarse a una empresa existente. Un administrador debe agregarte; SIGO actualizará el acceso automáticamente.");
+        return;
+      }
+
       empresaId = await crearEmpresaSigo(nombre);
-      const { data: { user } } = await supabase.auth.getUser();
       const empresas = await cargarMisEmpresas();
-      const creada = resolverEmpresaActiva(empresas, empresaId, user?.id ?? null);
+      const creada = resolverEmpresaActiva(empresas, empresaId, authData.user.id);
       if (!creada) throw new Error("EMPRESA_CREATED_NOT_VISIBLE");
 
       const { error: metadataError } = await supabase.auth.updateUser({
@@ -157,6 +193,7 @@ export default function SigoRoot() {
       setTenantState("ready");
       setWorkspace(workspaceInicial(creada.rol));
       setNuevaEmpresa("");
+      setEmptyTenantMode("checking");
       setTenantRetryKey((value) => value + 1);
     } catch (error) {
       console.error("No se pudo completar el alta inicial de empresa", error);
@@ -252,10 +289,26 @@ export default function SigoRoot() {
           <div className="sigo-recovery-actions"><button className="primary-button" type="button" onClick={() => { setAutoRetryCount(0); setTenantRetryKey((value) => value + 1); }}>Reintentar ahora</button><button className="sigo-recovery-secondary" type="button" onClick={() => void cambiarUsuario()}>Volver al ingreso</button></div>
           <div className="sigo-recovery-foot">Tus datos permanecen protegidos. SIGO no modifica información mientras completa la reconexión.</div>
         </main>
-      ) : empresaActiva ? workspaceContent : (
+      ) : empresaActiva ? workspaceContent : emptyTenantMode === "member" ? (
+        <main className="sigo-recovery" role="status" aria-live="polite">
+          <div className="sigo-recovery-head">
+            <div className="sigo-recovery-brand"><div className="sigo-recovery-mark">SG</div><div><strong>SIGO</strong><span>Sistema Inteligente de Gestión Operativa</span></div></div>
+            <div className="sigo-recovery-status"><span className="sigo-recovery-dot" />Esperando asignación</div>
+            <h1>Tu cuenta está lista</h1>
+            <p>Esta cuenta fue creada para trabajar dentro de una empresa existente. Pedile al administrador que agregue tu mismo email. SIGO verifica el acceso automáticamente cada pocos segundos.</p>
+          </div>
+          <div className="sigo-recovery-actions">
+            <button className="primary-button" type="button" onClick={() => setTenantRetryKey((value) => value + 1)}>Actualizar acceso ahora</button>
+            <button className="sigo-recovery-secondary" type="button" onClick={() => void cambiarUsuario()}>Volver al ingreso</button>
+          </div>
+          <div className="sigo-recovery-foot">No se crea una empresa nueva para este tipo de cuenta, evitando tenants duplicados por error.</div>
+        </main>
+      ) : emptyTenantMode === "checking" || autoProvisionando ? (
+        <main className="sigo-onboarding-card" aria-live="polite"><h1>Revisando tu acceso…</h1><p>Estamos verificando si tenés una empresa asignada o un alta pendiente.</p></main>
+      ) : (
         <main className="sigo-onboarding-card" aria-live="polite">
-          <h1>{autoProvisionando ? "Terminando de crear tu empresa…" : "Todavía no tenés una empresa asignada"}</h1>
-          <p>{autoProvisionando ? "Detectamos el alta iniciada al registrarte y estamos completando tu acceso automáticamente." : "Si sos usuario de un equipo, pedile al administrador que agregue este mismo email. Si vas a administrar tu propio negocio, podés crear la empresa ahora."}</p>
+          <h1>Todavía no tenés una empresa asignada</h1>
+          <p>Si vas a administrar tu propio negocio, podés crear la empresa ahora. Si pertenecés a un equipo existente, cerrá sesión y creá una cuenta de usuario para que el administrador te asigne correctamente.</p>
           <form onSubmit={crearPrimeraEmpresa}>
             <input aria-label="Nombre de la empresa" placeholder="Nombre de la empresa o negocio" value={nuevaEmpresa} onChange={(event) => setNuevaEmpresa(event.target.value)} autoComplete="organization" required disabled={autoProvisionando} />
             {errorEmpresa ? <div className="sigo-onboarding-error" role="alert">{errorEmpresa}</div> : null}
