@@ -78,7 +78,12 @@ function validarFactura(data: unknown): FacturaCompraIA {
 
   if (validos.length === 0) throw new Error("No pude reconocer productos con cantidad y costo válidos. Probá con otra foto más nítida.");
 
-  const proveedor = factura.proveedor && typeof factura.proveedor === "object" ? factura.proveedor : {};
+  const proveedor = (
+    factura.proveedor && typeof factura.proveedor === "object"
+      ? factura.proveedor
+      : {}
+  ) as Partial<FacturaCompraIA["proveedor"]>;
+
   return {
     proveedor: {
       razon_social: proveedor.razon_social ? String(proveedor.razon_social).trim() : null,
