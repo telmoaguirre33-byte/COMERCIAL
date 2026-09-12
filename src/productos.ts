@@ -68,6 +68,30 @@ function validarProducto(input: GuardarProductoSigoInput) {
   }
 }
 
+function mensajeErrorBackend(error: unknown, fallback: string) {
+  const original = typeof error === "object" && error !== null && "message" in error
+    ? String((error as { message?: unknown }).message ?? "")
+    : error instanceof Error ? error.message : String(error ?? "");
+
+  if (original.includes("PRODUCT_HAS_STOCK")) {
+    return "No se puede dar de baja el producto mientras tenga stock. Dejá el stock en cero mediante el circuito operativo antes de desactivarlo.";
+  }
+  if (original.includes("BARCODE_DUPLICATE_IN_COMPANY")) {
+    return "Ese código de barras ya está asignado a otro producto de esta empresa.";
+  }
+  if (original.includes("INTERNAL_CODE_DUPLICATE_IN_COMPANY")) {
+    return "Ese código interno ya está asignado a otro producto de esta empresa.";
+  }
+  if (original.includes("PRODUCT_NOT_FOUND_IN_TENANT")) {
+    return "El producto no pertenece a la empresa activa o ya no está disponible.";
+  }
+  if (original.includes("FORBIDDEN")) {
+    return "Tu perfil no tiene permiso para modificar productos.";
+  }
+
+  return original || fallback;
+}
+
 export async function listarProductosSigo(empresaId: string): Promise<ProductoSigo[]> {
   if (!empresaId) throw new Error("EMPRESA_REQUIRED");
 
@@ -75,7 +99,7 @@ export async function listarProductosSigo(empresaId: string): Promise<ProductoSi
     p_empresa_id: empresaId,
   });
 
-  if (error) throw error;
+  if (error) throw new Error(mensajeErrorBackend(error, "No se pudieron cargar los productos."));
   return (data ?? []) as ProductoSigo[];
 }
 
@@ -104,7 +128,7 @@ export async function guardarProductoSigo(input: GuardarProductoSigoInput): Prom
     p_stock_maximo: input.stockMaximo ?? null,
   });
 
-  if (error) throw error;
+  if (error) throw new Error(mensajeErrorBackend(error, "No se pudo guardar el producto."));
   if (!data) throw new Error("PRODUCT_SAVE_FAILED");
   return data as string;
 }
@@ -118,6 +142,6 @@ export async function eliminarProductoSigo(empresaId: string, productoId: string
     p_producto_id: productoId,
   });
 
-  if (error) throw error;
-  if (data !== true) throw new Error("PRODUCT_DELETE_FAILED");
+  if (error) throw new Error(mensajeErrorBackend(error, "No se pudo dar de baja el producto."));
+  if (data !== true) throw new Error("PRODUCT_DEACTIVATE_FAILED");
 }
