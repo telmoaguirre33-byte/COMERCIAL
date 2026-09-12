@@ -174,8 +174,6 @@ export async function cargarMisEmpresas(): Promise<EmpresaOperativa[]> {
     const compatible = error as { code?: string; message?: string; status?: number } | null;
     if (!errorTransitorio(compatible)) throw error;
 
-    // Un único reintento corto evita que una falla de red momentánea deje al usuario
-    // bloqueado en la pantalla de acceso. Nunca se reintentan errores de permisos/esquema.
     await esperar(650);
     return cargarMisEmpresasUnaVez();
   }
@@ -198,20 +196,32 @@ export async function crearEmpresaSigo(nombre: string): Promise<string> {
   return data as string;
 }
 
-export function leerEmpresaActivaGuardada(): string | null {
+function activeCompanyStorageKey(userId?: string | null): string {
+  const normalizedUserId = userId?.trim();
+  return normalizedUserId ? `${ACTIVE_COMPANY_KEY}.${normalizedUserId}` : ACTIVE_COMPANY_KEY;
+}
+
+export function leerEmpresaActivaGuardada(userId?: string | null): string | null {
   try {
-    return window.localStorage.getItem(ACTIVE_COMPANY_KEY);
+    const scopedKey = activeCompanyStorageKey(userId);
+    const scopedValue = window.localStorage.getItem(scopedKey);
+    if (scopedValue) return scopedValue;
+
+    // Compatibilidad con sesiones anteriores: el valor legado solo se usa como sugerencia
+    // y siempre se vuelve a validar contra las membresías visibles del usuario actual.
+    return userId ? window.localStorage.getItem(ACTIVE_COMPANY_KEY) : scopedValue;
   } catch {
     return null;
   }
 }
 
-export function guardarEmpresaActiva(empresaId: string | null): void {
+export function guardarEmpresaActiva(empresaId: string | null, userId?: string | null): void {
   try {
+    const key = activeCompanyStorageKey(userId);
     if (empresaId) {
-      window.localStorage.setItem(ACTIVE_COMPANY_KEY, empresaId);
+      window.localStorage.setItem(key, empresaId);
     } else {
-      window.localStorage.removeItem(ACTIVE_COMPANY_KEY);
+      window.localStorage.removeItem(key);
     }
   } catch {
     // La app puede continuar sin persistencia local (modo privado/intranet restringida).
@@ -221,15 +231,16 @@ export function guardarEmpresaActiva(empresaId: string | null): void {
 export function resolverEmpresaActiva(
   empresas: EmpresaOperativa[],
   preferida?: string | null,
+  userId?: string | null,
 ): EmpresaOperativa | null {
   if (empresas.length === 0) return null;
 
-  const candidata = preferida ?? leerEmpresaActivaGuardada();
+  const candidata = preferida ?? leerEmpresaActivaGuardada(userId);
   const encontrada = candidata
     ? empresas.find((empresa) => empresa.empresa_id === candidata)
     : undefined;
 
   const activa = encontrada ?? empresas[0];
-  guardarEmpresaActiva(activa.empresa_id);
+  guardarEmpresaActiva(activa.empresa_id, userId);
   return activa;
 }
