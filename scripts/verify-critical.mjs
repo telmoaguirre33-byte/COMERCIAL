@@ -4,13 +4,13 @@ import path from 'node:path';
 const checks = [
   {
     file: 'src/SigoAuthGate.tsx',
-    required: ['signInWithPassword', 'signUp', 'resetPasswordForEmail', 'Crear cuenta y empresa', 'Ingresar a SIGO', 'PENDING_EMPRESA_METADATA_KEY', 'sigo_empresa_nombre', 'Email o contraseña incorrectos.'],
-    label: 'auth login/register/recovery with activation-safe company onboarding',
+    required: ['signInWithPassword', 'signUp', 'resetPasswordForEmail', 'Crear cuenta y empresa', 'Ingresar a SIGO', 'PENDING_EMPRESA_METADATA_KEY', 'sigo_empresa_nombre', 'Email o contraseña incorrectos.', 'register_member', 'registrarmeComoUsuario', 'Crear cuenta de usuario', 'No se crea una empresa nueva'],
+    label: 'auth login/register/staff/recovery with activation-safe company onboarding',
   },
   {
     file: 'src/SigoRoot.tsx',
-    required: ['autoProvisionAttemptedRef', 'sigo_empresa_nombre', 'crearEmpresaSigo(nombrePendiente)', 'cargarMisEmpresas()', 'no vuelvas a crearla', 'setTenantRetryKey'],
-    label: 'post-activation company provisioning without duplicate manual creation',
+    required: ['autoProvisionAttemptedRef', 'sigo_empresa_nombre', 'crearEmpresaSigo(nombrePendiente)', 'cargarMisEmpresas()', 'no vuelvas a crearla', 'setTenantRetryKey', 'UsuariosOperativos', 'PortalCliente', 'workspace === "usuarios"', 'workspace === "portal"'],
+    label: 'post-activation company provisioning plus role-specific workspaces',
   },
   {
     file: 'src/tenant.ts',
@@ -20,15 +20,35 @@ const checks = [
   },
   {
     file: 'src/workspacePermissions.ts',
-    required: ['owner:', 'admin:', 'seller:', 'warehouse:', 'client:', 'seller: ["operacion"]', 'warehouse: ["operacion"]', 'client: []'],
+    required: ['owner:', 'admin:', 'seller:', 'warehouse:', 'client:', '"usuarios"', 'seller: ["operacion"]', 'warehouse: ["operacion"]', 'client: ["portal"]'],
     forbidden: ['administrative:'],
-    label: 'workspace/backend role contract',
+    label: 'workspace/backend role contract including admin users and client portal',
   },
   {
     file: 'src/permissions.ts',
     required: ['"superadmin"', '"owner"', '"admin"', '"seller"', '"warehouse"', '"client"', 'costs.read', 'margins.read', 'price_lists.read', '"users.manage"'],
     forbidden: ['"administrative"'],
     label: 'permission/backend role contract',
+  },
+  {
+    file: 'src/usuarios.ts',
+    required: ['listar_usuarios_empresa_sigo', 'agregar_usuario_empresa_sigo', 'actualizar_usuario_empresa_sigo', 'USER_NOT_REGISTERED', 'OWNER_MEMBERSHIP_IMMUTABLE'],
+    label: 'tenant user management client with safe error mapping',
+  },
+  {
+    file: 'src/UsuariosOperativos.tsx',
+    required: ['Usuarios y permisos', 'Agregar usuario', 'actorRol === "admin"', 'seller', 'warehouse', 'client', 'Desactivar', 'Reactivar'],
+    label: 'owner/admin user administration UI without privilege escalation',
+  },
+  {
+    file: 'src/portalCliente.ts',
+    required: ['portal_cliente_catalogo_sigo', 'PORTAL_FORBIDDEN', 'dias_cobertura', 'sugerencia_compra'],
+    label: 'secure client portal data client',
+  },
+  {
+    file: 'src/PortalCliente.tsx',
+    required: ['Portal Cliente', 'Información comercial publicada exclusivamente para tu cuenta', 'Cobertura saludable', 'Reposición prioritaria', 'Sugerido'],
+    label: 'usable client-only portal UI',
   },
   {
     file: 'src/TenantSwitcher.tsx',
@@ -91,6 +111,11 @@ const checks = [
     label: 'multiempresa base',
   },
   {
+    file: 'supabase/migrations/20260910010900_portal_cliente_seguro.sql',
+    required: ['portal_cliente_usuarios', 'portal_stock_publicado', 'portal_cliente_catalogo_sigo', 'PORTAL_FORBIDDEN', 'nunca expone costos ni márgenes'],
+    label: 'client portal backend isolated by tenant and client',
+  },
+  {
     file: 'supabase/migrations/20260910031300_permisos_denegados_granulares.sql',
     required: ['DENY gana siempre', 'costs.read', 'margins.read', 'price_lists.read', "when 'seller'"],
     label: 'granular tenant permissions',
@@ -99,6 +124,17 @@ const checks = [
     file: 'supabase/migrations/20260912032000_precio_venta_para_operacion.sql',
     required: ["'sales.read'", "'sales.write'", "'price_lists.read'", 'p.precio_venta', 'p.costo_actual', 'p.margen_ganancia'],
     label: 'operational sale price without sensitive commercial data',
+  },
+  {
+    file: 'supabase/migrations/20260912102000_roles_operativos_hardening.sql',
+    required: ["when 'admin'", "'users.manage'", "when 'warehouse'", "'stock.write'"],
+    label: 'backend operational role hardening',
+  },
+  {
+    file: 'supabase/migrations/20260912185000_usuarios_empresa_gestion_segura.sql',
+    required: ['listar_usuarios_empresa_sigo', 'agregar_usuario_empresa_sigo', 'actualizar_usuario_empresa_sigo', 'users.manage', 'ROLE_NOT_ALLOWED', 'OWNER_MEMBERSHIP_IMMUTABLE', 'SELF_DEACTIVATION_FORBIDDEN', "v_actor_rol = 'admin'"],
+    forbidden: ['delete from public.empresa_usuarios', 'truncate'],
+    label: 'secure owner/admin tenant user management without owner mutation',
   },
   {
     file: 'supabase/migrations/20260912142200_productos_precio_operativo_seguro.sql',
@@ -193,13 +229,13 @@ for (const root of projectRoots) {
       if (!textExtensions.has(path.extname(entry.name))) continue;
       const content = fs.readFileSync(fullPath, 'utf8');
       if (/\bSOVI\b/i.test(content)) {
-        console.error(`FAIL project boundary: SOVI reference found in ${fullPath}`);
+        console.error(`FAIL project boundary: foreign-project reference found in ${fullPath}`);
         failed = true;
       }
     }
   }
 }
-if (!failed) console.log('PASS project boundary: no SOVI contamination in SIGO code/docs/migrations');
+if (!failed) console.log('PASS project boundary: no foreign-project contamination in SIGO code/docs/migrations');
 
 if (failed) process.exit(1);
 console.log('SIGO_CRITICAL_FLOW_STATIC_CHECKS_OK');
