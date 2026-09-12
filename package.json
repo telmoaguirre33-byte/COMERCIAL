@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "verify:critical": "node scripts/verify-critical.mjs && node scripts/verify-idempotency-hardening.mjs && node scripts/verify-onboarding-hardening.mjs",
+    "verify:critical": "node scripts/verify-critical.mjs && node scripts/verify-idempotency-hardening.mjs && node scripts/verify-onboarding-hardening.mjs && node scripts/verify-operational-ui.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
