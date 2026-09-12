@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { verificarSaludOperativaSigo, type SaludOperativaSigo } from "./health";
 import { cargarResumenOperativoSigo, type ResumenOperativoSigo } from "./informes";
 
@@ -50,28 +50,41 @@ export default function InformesOperativos({ empresaId }: { empresaId: string })
   const [salud, setSalud] = useState<SaludOperativaSigo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const empresaActivaRef = useRef(empresaId);
+  const cargaRef = useRef(0);
 
-  async function cargar() {
+  async function cargar(targetEmpresaId = empresaId) {
+    const cargaId = ++cargaRef.current;
     setLoading(true);
     setError("");
     try {
       const [nuevoResumen, nuevaSalud] = await Promise.all([
-        cargarResumenOperativoSigo(empresaId),
-        verificarSaludOperativaSigo(empresaId),
+        cargarResumenOperativoSigo(targetEmpresaId),
+        verificarSaludOperativaSigo(targetEmpresaId),
       ]);
+      if (empresaActivaRef.current !== targetEmpresaId || cargaRef.current !== cargaId) return;
       setResumen(nuevoResumen);
       setSalud(nuevaSalud);
     } catch (err) {
+      if (empresaActivaRef.current !== targetEmpresaId || cargaRef.current !== cargaId) return;
       setResumen(vacio);
       setSalud(null);
       setError(err instanceof Error ? err.message : "No se pudieron cargar los informes.");
     } finally {
-      setLoading(false);
+      if (empresaActivaRef.current === targetEmpresaId && cargaRef.current === cargaId) setLoading(false);
     }
   }
 
   useEffect(() => {
-    void cargar();
+    empresaActivaRef.current = empresaId;
+    cargaRef.current += 1;
+    setResumen(vacio);
+    setSalud(null);
+    setError("");
+    setLoading(true);
+    void cargar(empresaId);
+    // cargar captura el tenant y descarta respuestas tardías de otra empresa.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresaId]);
 
   if (loading) return <div className="panel"><p>Cargando indicadores operativos…</p></div>;
@@ -85,7 +98,7 @@ export default function InformesOperativos({ empresaId }: { empresaId: string })
           <h2>Informes operativos</h2>
           <p>Indicadores consolidados únicamente de la empresa activa.</p>
         </div>
-        <button className="admin-button" onClick={() => void cargar()}>Actualizar</button>
+        <button className="admin-button" onClick={() => void cargar(empresaId)}>Actualizar</button>
       </div>
 
       {error && (
