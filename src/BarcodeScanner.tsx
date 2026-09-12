@@ -20,6 +20,7 @@ type BarcodeDetectorLike = {
 
 type BarcodeDetectorCtor = new (options?: { formats?: string[] }) => BarcodeDetectorLike;
 type ScanSource = "manual" | "wedge" | "camera";
+type ScannerControlsLike = { stop(): void };
 
 const ACTIONS: Array<{ value: BarcodeAction; label: string }> = [
   { value: "vender", label: "Vender producto" },
@@ -30,6 +31,14 @@ const ACTIONS: Array<{ value: BarcodeAction; label: string }> = [
 
 const SCANNER_GAP_MS = 90;
 const CAMERA_DUPLICATE_GUARD_MS = 1200;
+const CAMERA_CONSTRAINTS: MediaStreamConstraints = {
+  video: {
+    facingMode: { ideal: "environment" },
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
+  },
+  audio: false,
+};
 
 export default function BarcodeScanner({
   empresaId,
@@ -41,9 +50,11 @@ export default function BarcodeScanner({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraStatus, setCameraStatus] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const zxingControlsRef = useRef<ScannerControlsLike | null>(null);
   const scanningRef = useRef(false);
   const inFlightRef = useRef(false);
   const wedgeBufferRef = useRef("");
@@ -76,6 +87,7 @@ export default function BarcodeScanner({
       const previous = lastCameraResolvedRef.current;
       if (previous && previous.code === normalized && now - previous.at < CAMERA_DUPLICATE_GUARD_MS) return;
       lastCameraResolvedRef.current = { code: normalized, at: now };
+      setCameraStatus(`Código leído: ${normalized}`);
     }
 
     const requestId = ++requestRef.current;
@@ -87,14 +99,17 @@ export default function BarcodeScanner({
       if (empresaActivaRef.current !== empresaOperacion || requestRef.current !== requestId) return;
       if (matches.length === 0) {
         setError(`No se encontró un producto con el código ${normalized}.`);
+        if (source === "camera") setCameraStatus("Código leído, pero no existe en esta empresa.");
         return;
       }
       if (matches.length > 1) {
         setError("El código está duplicado dentro de esta empresa. Revisá el maestro de productos.");
+        if (source === "camera") setCameraStatus("Código duplicado. Revisá el maestro de productos.");
         return;
       }
       setCode("");
       onProduct(matches[0], action);
+      if (source === "camera") setCameraStatus(`Listo: ${matches[0].nombre}`);
       if ("vibrate" in navigator) navigator.vibrate?.(40);
     } catch (e) {
       console.error(e);
@@ -112,87 +127,120 @@ export default function BarcodeScanner({
 
   function stopCamera() {
     scanningRef.current = false;
+    zxingControlsRef.current?.stop();
+    zxingControlsRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     lastCameraResolvedRef.current = null;
     setCameraOpen(false);
+    setCameraStatus("");
     focusScanner();
   }
 
-  async function openCamera() {
+  function openCamera() {
     setError("");
-    if (!detectorCtor) {
-      setError("Este navegador no ofrece escaneo nativo por cámara. Podés usar pistola o ingresar el código manualmente.");
-      return;
-    }
+    setCameraStatus("Abriendo cámara trasera…");
     if (!navigator.mediaDevices?.getUserMedia) {
-      setError("La cámara no está disponible en este dispositivo o contexto.");
+      setError("La cámara no está disponible en este dispositivo o contexto. Usá HTTPS o la app instalada.");
+      setCameraStatus("");
       return;
     }
-
-    const empresaOperacion = empresaId;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
-      });
-      if (empresaActivaRef.current !== empresaOperacion) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
-      streamRef.current = stream;
-      lastCameraResolvedRef.current = null;
-      setCameraOpen(true);
-    } catch (e) {
-      console.error(e);
-      if (empresaActivaRef.current === empresaOperacion) setError("No se pudo abrir la cámara. Revisá el permiso del navegador.");
-    }
+    setCameraOpen(true);
   }
 
   useEffect(() => {
-    if (!cameraOpen || !videoRef.current || !streamRef.current || !detectorCtor) return;
+    if (!cameraOpen || !videoRef.current) return;
 
     const video = videoRef.current;
-    video.srcObject = streamRef.current;
-    let detector: BarcodeDetectorLike;
-    try {
-      // No forzamos una lista de formatos: algunos navegadores lanzan NotSupportedError
-      // si se incluye siquiera un formato que su implementación no reconoce.
-      detector = new detectorCtor();
-    } catch (e) {
-      console.error("BarcodeDetector no pudo inicializarse", e);
-      setError("El lector de cámara de este navegador no pudo inicializarse. Usá pistola o ingreso manual.");
-      stopCamera();
-      return;
-    }
+    let cancelled = false;
+    let nativeTimer: number | undefined;
     scanningRef.current = true;
 
-    let timer: number | undefined;
-    const scan = async () => {
-      if (!scanningRef.current) return;
-      try {
-        if (!inFlightRef.current && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-          const results = await detector.detect(video);
-          const found = results.map((r) => normalizeBarcode(r.rawValue || "")).find(Boolean);
-          if (found) await resolveCode(found, "camera");
+    async function startNativeFallback() {
+      if (!detectorCtor || cancelled) {
+        if (!cancelled) {
+          setError("Este navegador no pudo iniciar el lector de códigos. Podés usar pistola o ingreso manual.");
+          stopCamera();
         }
-      } catch (e) {
-        console.debug("BarcodeDetector scan skipped", e);
+        return;
       }
-      timer = window.setTimeout(scan, 220);
-    };
 
-    void video.play().then(scan).catch((e) => {
-      console.error(e);
-      setError("No se pudo iniciar la vista de cámara.");
-      stopCamera();
-    });
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
+        if (cancelled || empresaActivaRef.current !== empresaId) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
+        video.srcObject = stream;
+        const detector = new detectorCtor();
+        await video.play();
+        setCameraStatus("Cámara activa. Centrá el código dentro del recuadro.");
+
+        const scanNative = async () => {
+          if (!scanningRef.current || cancelled) return;
+          try {
+            if (!inFlightRef.current && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+              const results = await detector.detect(video);
+              const found = results.map((r) => normalizeBarcode(r.rawValue || "")).find(Boolean);
+              if (found) await resolveCode(found, "camera");
+            }
+          } catch (e) {
+            console.debug("BarcodeDetector scan skipped", e);
+          }
+          nativeTimer = window.setTimeout(scanNative, 220);
+        };
+        void scanNative();
+      } catch (e) {
+        console.error("No se pudo iniciar BarcodeDetector", e);
+        if (!cancelled) {
+          setError("No se pudo abrir la cámara. Revisá el permiso del navegador y volvé a intentar.");
+          stopCamera();
+        }
+      }
+    }
+
+    async function startRobustScanner() {
+      try {
+        const { BrowserMultiFormatReader } = await import("@zxing/browser");
+        if (cancelled) return;
+        const reader = new BrowserMultiFormatReader();
+        const controls = await reader.decodeFromConstraints(
+          CAMERA_CONSTRAINTS,
+          video,
+          (result, _scanError, callbackControls) => {
+            if (callbackControls) zxingControlsRef.current = callbackControls;
+            if (!result || inFlightRef.current || cancelled) return;
+            const found = normalizeBarcode(result.getText());
+            if (found) void resolveCode(found, "camera");
+          },
+        );
+        if (cancelled) {
+          controls.stop();
+          return;
+        }
+        zxingControlsRef.current = controls;
+        setCameraStatus("Cámara activa. Centrá el código dentro del recuadro.");
+      } catch (e) {
+        console.warn("ZXing no pudo iniciar; se prueba lector nativo", e);
+        if (!cancelled) void startNativeFallback();
+      }
+    }
+
+    void startRobustScanner();
 
     return () => {
+      cancelled = true;
       scanningRef.current = false;
-      if (timer) window.clearTimeout(timer);
+      if (nativeTimer) window.clearTimeout(nativeTimer);
+      zxingControlsRef.current?.stop();
+      zxingControlsRef.current = null;
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     };
-  }, [cameraOpen, detectorCtor]);
+    // El scanner se reinicia deliberadamente sólo al abrir/cerrar cámara o cambiar empresa.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraOpen, detectorCtor, empresaId]);
 
   useEffect(() => {
     empresaActivaRef.current = empresaId;
@@ -204,7 +252,7 @@ export default function BarcodeScanner({
     setCode("");
     setError("");
     setBusy(false);
-    if (cameraOpen || streamRef.current) stopCamera();
+    if (cameraOpen || streamRef.current || zxingControlsRef.current) stopCamera();
     else focusScanner();
     // El cambio de tenant invalida lecturas y cámara del tenant anterior.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -245,16 +293,21 @@ export default function BarcodeScanner({
     return () => window.removeEventListener("keydown", handleKeyboardWedge);
   }, [cameraOpen, empresaId, action]);
 
-  useEffect(() => () => stopCamera(), []);
+  useEffect(() => () => {
+    scanningRef.current = false;
+    zxingControlsRef.current?.stop();
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+  }, []);
 
   return (
-    <section aria-label="Escáner de código de barras" style={{ display: "grid", gap: 12 }}>
+    <section className="barcode-scanner" aria-label="Escáner de código de barras">
       {onActionChange && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} aria-label="Acción del código escaneado">
+        <div className="barcode-actions" aria-label="Acción del código escaneado">
           {ACTIONS.map((item) => (
             <button
               key={item.value}
               type="button"
+              className={action === item.value ? "primary-button" : "admin-button"}
               onClick={() => onActionChange(item.value)}
               aria-pressed={action === item.value}
             >
@@ -264,7 +317,7 @@ export default function BarcodeScanner({
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div className="barcode-entry-row">
         <input
           ref={inputRef}
           type="text"
@@ -284,27 +337,36 @@ export default function BarcodeScanner({
           placeholder="Código de barras o interno"
           aria-label="Código de barras o código interno"
         />
-        <button type="button" disabled={busy || !code.trim()} onClick={() => void resolveCode(code, "manual")}>
+        <button className="admin-button" type="button" disabled={busy || !code.trim()} onClick={() => void resolveCode(code, "manual")}>
           {busy ? "Buscando…" : "Buscar"}
         </button>
-        <button type="button" disabled={busy || cameraOpen} onClick={() => void openCamera()}>
-          📷 Escanear con cámara
-        </button>
+        {cameraOpen ? (
+          <button className="admin-button danger-button" type="button" onClick={stopCamera}>Cerrar cámara</button>
+        ) : (
+          <button className="primary-button barcode-camera-button" type="button" disabled={busy} onClick={openCamera}>
+            📷 Escanear con cámara
+          </button>
+        )}
       </div>
 
-      <p style={{ margin: 0, opacity: 0.7, fontSize: 13 }}>
+      <p className="barcode-help">
         Pistola USB/Bluetooth: cada lectura suma una unidad, incluso si escaneás el mismo producto varias veces. También acepta código interno alfanumérico.
       </p>
 
       {cameraOpen && (
-        <div style={{ display: "grid", gap: 8 }}>
-          <video ref={videoRef} playsInline muted style={{ width: "100%", maxWidth: 480, borderRadius: 12 }} />
-          <p style={{ margin: 0, fontSize: 13, opacity: 0.72 }}>Cámara continua: apuntá al siguiente producto sin cerrar el lector.</p>
-          <button type="button" onClick={stopCamera}>Cerrar cámara</button>
+        <div className="camera-scanner-shell">
+          <div className="camera-preview-wrap">
+            <video ref={videoRef} playsInline muted className="camera-preview" />
+            <div className="camera-scan-frame" aria-hidden="true" />
+          </div>
+          <div className="camera-status" role="status" aria-live="polite">
+            <strong>{cameraStatus || "Cámara activa"}</strong>
+            <span>Acercá o alejá el producto hasta ver el código completo, nítido y horizontal dentro del recuadro.</span>
+          </div>
         </div>
       )}
 
-      {error && <p role="alert">{error}</p>}
+      {error && <p className="form-error" role="alert">{error}</p>}
     </section>
   );
 }
