@@ -53,6 +53,20 @@ function validarCuitOpcional(cuit?: string): string | null {
   return limpio;
 }
 
+function mensajeCompra(raw: string): string {
+  if (raw.includes("IDEMPOTENCY_CONFLICT")) return "Esta compra ya fue confirmada con la misma clave pero datos distintos. Actualizá Compras antes de volver a intentar.";
+  if (raw.includes("IDEMPOTENCY_KEY_REQUIRED") || raw.includes("IDEMPOTENCY_KEY_INVALID")) return "No se pudo generar una clave segura para confirmar la compra. Reiniciá la carga antes de volver a intentar.";
+  if (raw.includes("DUPLICATE_PRODUCT_ITEM")) return "El mismo producto aparece más de una vez. Unificá la cantidad en una sola línea.";
+  if (raw.includes("INVALID_ITEM") || raw.includes("INVALID_QUANTITY") || raw.includes("INVALID_COST")) return "Hay una línea de compra con producto, cantidad o costo inválido.";
+  if (raw.includes("TOO_MANY_ITEMS")) return "La compra tiene demasiadas líneas para una sola operación. Dividila en más de una compra.";
+  if (raw.includes("FORBIDDEN")) return "No tenés permiso para registrar compras.";
+  if (raw.includes("STOCK_WRITE_REQUIRED")) return "Tu usuario puede cargar compras pero no modificar stock.";
+  if (raw.includes("SUPPLIER_NOT_FOUND")) return "El proveedor no pertenece a la empresa activa.";
+  if (raw.includes("PRODUCT_NOT_FOUND")) return "Uno de los productos no pertenece a la empresa activa.";
+  if (raw.includes("AUTH_REQUIRED")) return "La sesión venció. Volvé a ingresar a SIGO.";
+  return raw || "No se pudo confirmar la compra.";
+}
+
 export function consolidarItemsCompra(items: CompraItemInput[]): CompraItemInput[] {
   const agrupados = new Map<string, { cantidad: number; costoPonderado: number }>();
 
@@ -60,13 +74,17 @@ export function consolidarItemsCompra(items: CompraItemInput[]): CompraItemInput
     const productoId = item.producto_id?.trim();
     const cantidad = Number(item.cantidad);
     const costo = Number(item.costo_unitario);
-    if (!productoId || !Number.isFinite(cantidad) || cantidad <= 0 || !Number.isFinite(costo) || costo < 0) continue;
+    if (!productoId) throw new Error("Hay una línea de compra sin producto seleccionado.");
+    if (!Number.isFinite(cantidad) || cantidad <= 0) throw new Error("Hay una línea de compra con cantidad inválida.");
+    if (!Number.isFinite(costo) || costo < 0) throw new Error("Hay una línea de compra con costo inválido.");
 
     const previo = agrupados.get(productoId) ?? { cantidad: 0, costoPonderado: 0 };
-    agrupados.set(productoId, {
-      cantidad: previo.cantidad + cantidad,
-      costoPonderado: previo.costoPonderado + cantidad * costo,
-    });
+    const cantidadAcumulada = previo.cantidad + cantidad;
+    const costoPonderado = previo.costoPonderado + cantidad * costo;
+    if (!Number.isFinite(cantidadAcumulada) || !Number.isFinite(costoPonderado)) {
+      throw new Error("La compra supera los valores numéricos permitidos.");
+    }
+    agrupados.set(productoId, { cantidad: cantidadAcumulada, costoPonderado });
   }
 
   return [...agrupados.entries()].map(([producto_id, valor]) => ({
@@ -101,7 +119,7 @@ export async function guardarProveedorSigo(input: {
   const { data, error } = await supabase
     .from("proveedores_sigo")
     .insert({
-      empresa_id: input.empresaId,
+      empresa_id: input.empresaId.trim(),
       razon_social: razonSocial,
       cuit: validarCuitOpcional(input.cuit),
       telefono: input.telefono?.trim() || null,
@@ -115,10 +133,12 @@ export async function guardarProveedorSigo(input: {
 }
 
 export async function listarComprasSigo(empresaId: string): Promise<CompraSigo[]> {
+  const empresaNormalizada = empresaId.trim();
+  if (!empresaNormalizada) return [];
   const { data, error } = await supabase
     .from("compras_sigo")
     .select("id,empresa_id,proveedor_id,fecha_compra,tipo_comprobante,numero_comprobante,subtotal,total,estado,origen,created_at")
-    .eq("empresa_id", empresaId)
+    .eq("empresa_id", empresaNormalizada)
     .order("created_at", { ascending: false })
     .limit(50);
   if (error) throw error;
@@ -134,31 +154,29 @@ export async function confirmarCompraSigo(input: {
   numeroComprobante?: string;
   idempotencyKey: string;
 }): Promise<string> {
-  if (!input.empresaId?.trim()) throw new Error("No hay una empresa activa válida.");
-  if (!input.proveedorId?.trim()) throw new Error("Seleccioná un proveedor.");
-  if (!input.idempotencyKey?.trim()) throw new Error("No se pudo generar una clave segura para confirmar la compra.");
+  const empresaId = input.empresaId?.trim() ?? "";
+  const proveedorId = input.proveedorId?.trim() ?? "";
+  const idempotencyKey = input.idempotencyKey?.trim() ?? "";
+  if (!empresaId) throw new Error("No hay una empresa activa válida.");
+  if (!proveedorId) throw new Error("Seleccioná un proveedor.");
+  if (!idempotencyKey) throw new Error("No se pudo generar una clave segura para confirmar la compra.");
 
   const items = consolidarItemsCompra(input.items);
   if (items.length === 0) throw new Error("Agregá al menos un producto válido.");
 
   const { data, error } = await supabase.rpc("confirmar_compra_sigo", {
-    p_empresa_id: input.empresaId,
-    p_proveedor_id: input.proveedorId,
+    p_empresa_id: empresaId,
+    p_proveedor_id: proveedorId,
     p_items: items,
     p_fecha: input.fecha || null,
     p_tipo_comprobante: input.tipoComprobante?.trim() || null,
     p_numero_comprobante: input.numeroComprobante?.trim() || null,
-    p_idempotency_key: input.idempotencyKey.trim(),
+    p_idempotency_key: idempotencyKey,
   });
-  if (error) {
-    const msg = error.message || "No se pudo confirmar la compra";
-    if (msg.includes("FORBIDDEN")) throw new Error("No tenés permiso para registrar compras.");
-    if (msg.includes("STOCK_WRITE_REQUIRED")) throw new Error("Tu usuario puede cargar compras pero no modificar stock.");
-    if (msg.includes("SUPPLIER_NOT_FOUND")) throw new Error("El proveedor no pertenece a la empresa activa.");
-    if (msg.includes("PRODUCT_NOT_FOUND")) throw new Error("Uno de los productos no pertenece a la empresa activa.");
-    throw error;
-  }
-  return String(data);
+  if (error) throw new Error(mensajeCompra(error.message || "No se pudo confirmar la compra."));
+  const compraId = String(data ?? "").trim();
+  if (!compraId) throw new Error("La compra no devolvió comprobante. No la repitas hasta verificar su estado.");
+  return compraId;
 }
 
 export async function verificarCompraSigo(input: {
