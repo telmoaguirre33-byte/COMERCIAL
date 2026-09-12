@@ -76,9 +76,14 @@ const checks = [
     label: 'purchase/supplier validation and duplicate-item consolidation',
   },
   {
+    file: 'src/informes.ts',
+    required: ['listarComprasSigoCompletas', '.eq("estado", "confirmada")', 'saldosPositivos', 'numeroSeguro', 'cajaHoyPorMedio'],
+    label: 'complete confirmed-only management totals and debtor-only receivables',
+  },
+  {
     file: 'src/InformesOperativos.tsx',
-    required: ['empresaActivaRef', 'cargaRef'],
-    label: 'reports tenant isolation',
+    required: ['empresaActivaRef', 'cargaRef', 'mercado_pago: "Mercado Pago"', 'Ventas confirmadas', 'Compras confirmadas', 'Sólo saldos deudores'],
+    label: 'tenant-isolated reports with explicit confirmed totals and payment labels',
   },
   {
     file: 'supabase/migrations/20260909191300_multiempresa_base.sql',
