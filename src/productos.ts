@@ -88,6 +88,9 @@ function mensajeErrorBackend(error: unknown, fallback: string) {
   if (original.includes("FORBIDDEN")) {
     return "Tu perfil no tiene permiso para modificar productos.";
   }
+  if (original.includes("costo_actual") && original.includes("not-null")) {
+    return "SIGO no pudo inicializar el costo del producto. Actualizá la aplicación y volvé a intentar; el costo inicial debe quedar en cero hasta la primera compra.";
+  }
 
   return original || fallback;
 }
@@ -108,6 +111,7 @@ export async function guardarProductoSigo(input: GuardarProductoSigoInput): Prom
   if (!input.nombre.trim()) throw new Error("PRODUCT_NAME_REQUIRED");
   validarProducto(input);
 
+  const esNuevo = !input.productoId;
   const { data, error } = await supabase.rpc("guardar_producto_sigo", {
     p_empresa_id: input.empresaId,
     p_producto_id: input.productoId ?? null,
@@ -118,12 +122,12 @@ export async function guardarProductoSigo(input: GuardarProductoSigoInput): Prom
     p_categoria: normalizarTexto(input.categoria),
     p_marca: normalizarTexto(input.marca),
     p_proveedor: normalizarTexto(input.proveedor),
-    p_costo_actual: input.costoActual ?? null,
-    p_costo_ultima_compra: input.costoUltimaCompra ?? null,
-    p_precio_venta: input.precioVenta ?? null,
-    p_margen_ganancia: input.margenGanancia ?? null,
-    p_margen_porcentaje: input.margenPorcentaje ?? null,
-    p_stock_actual: input.stockActual ?? null,
+    p_costo_actual: input.costoActual ?? (esNuevo ? 0 : null),
+    p_costo_ultima_compra: input.costoUltimaCompra ?? (esNuevo ? 0 : null),
+    p_precio_venta: input.precioVenta ?? (esNuevo ? 0 : null),
+    p_margen_ganancia: input.margenGanancia ?? (esNuevo ? 0 : null),
+    p_margen_porcentaje: input.margenPorcentaje ?? (esNuevo ? 0 : null),
+    p_stock_actual: input.stockActual ?? (esNuevo ? 0 : null),
     p_stock_minimo: input.stockMinimo ?? null,
     p_stock_maximo: input.stockMaximo ?? null,
   });
