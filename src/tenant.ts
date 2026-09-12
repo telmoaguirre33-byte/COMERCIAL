@@ -3,7 +3,6 @@ import { supabase } from "./supabase";
 export type RolEmpresaSigo =
   | "owner"
   | "admin"
-  | "administrative"
   | "seller"
   | "warehouse"
   | "client";
@@ -20,7 +19,6 @@ const ACTIVE_COMPANY_KEY = "sigo.activeEmpresaId";
 const ROLES_VALIDOS = new Set<RolEmpresaSigo>([
   "owner",
   "admin",
-  "administrative",
   "seller",
   "warehouse",
   "client",
