@@ -69,6 +69,11 @@ function mensajeVenta(error: unknown): string {
       ? String((error as { message?: unknown }).message ?? "")
       : String(error ?? "");
 
+  if (raw.includes("IDEMPOTENCY_CONFLICT")) return "La misma operación ya fue usada con datos distintos. Actualizá las ventas recientes antes de intentar otra confirmación.";
+  if (raw.includes("IDEMPOTENCY_KEY_INVALID")) return "No se pudo generar una clave segura para confirmar la venta. Volvé a iniciar el carrito.";
+  if (raw.includes("SALE_TOO_MANY_ITEMS")) return "La venta tiene demasiados renglones para una sola operación. Dividila en más de una venta.";
+  if (raw.includes("SALE_ITEM_INVALID") || raw.includes("SALE_QUANTITY_INVALID")) return "Hay un producto o una cantidad inválida en el carrito. Revisá la venta antes de confirmar.";
+  if (raw.includes("PAYMENT_METHOD_INVALID")) return "Seleccioná un medio de pago válido.";
   if (raw.includes("ACCOUNT_CURRENT_REQUIRES_CLIENT")) return "Cuenta corriente requiere seleccionar un cliente.";
   if (raw.includes("CLIENT_NOT_FOUND")) return "El cliente seleccionado ya no está disponible en esta empresa.";
   if (raw.includes("CREDIT_LIMIT_EXCEEDED")) return "La venta supera el límite de crédito disponible del cliente.";
