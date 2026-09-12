@@ -1,10 +1,10 @@
 import type { RolEmpresaSigo } from "./tenant";
 
-export type SigoWorkspace = "operacion" | "clientes" | "compras" | "informes";
+export type SigoWorkspace = "operacion" | "usuarios" | "clientes" | "compras" | "informes" | "portal";
 
 const WORKSPACES_BY_ROLE: Record<RolEmpresaSigo, readonly SigoWorkspace[]> = {
-  owner: ["operacion", "clientes", "compras", "informes"],
-  admin: ["operacion", "clientes", "compras", "informes"],
+  owner: ["operacion", "usuarios", "clientes", "compras", "informes"],
+  admin: ["operacion", "usuarios", "clientes", "compras", "informes"],
   // Vendedor usa clientes dentro del flujo de venta, pero no entra al workspace
   // completo de cuentas corrientes hasta disponer de una vista estrictamente
   // de solo lectura acorde a clients.read.
@@ -12,9 +12,8 @@ const WORKSPACES_BY_ROLE: Record<RolEmpresaSigo, readonly SigoWorkspace[]> = {
   // Depósito opera catálogo/stock, pero no entra a Compras para no exponer costos
   // hasta disponer de una vista de recepción específica sin valores sensibles.
   warehouse: ["operacion"],
-  // Cliente nunca entra a módulos internos. El acceso externo debe resolverse
-  // exclusivamente por Portal Cliente, con consultas limitadas a su propia cuenta.
-  client: [],
+  // Cliente sólo entra al portal externo de su propia cuenta.
+  client: ["portal"],
 };
 
 export function workspacesPermitidos(rol: RolEmpresaSigo): readonly SigoWorkspace[] {
