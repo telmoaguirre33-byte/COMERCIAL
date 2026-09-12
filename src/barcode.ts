@@ -29,6 +29,7 @@ export type BarcodeProduct = {
 export function normalizeBarcode(raw: string): string {
   return String(raw ?? "")
     .replace(/[\u0000-\u001F\u007F]/g, "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
     .trim()
     .slice(0, 128);
 }
@@ -73,7 +74,14 @@ export async function buscarProductoPorCodigo(
     throw new Error("TENANT_PRODUCT_MISMATCH");
   }
 
-  return productos;
+  // Evita falsos "código duplicado" si una función/vista futura devuelve el mismo
+  // producto más de una vez. Dos IDs distintos siguen llegando como duplicados reales.
+  const unicos = new Map<string, BarcodeProduct>();
+  for (const producto of productos) {
+    if (!unicos.has(producto.id)) unicos.set(producto.id, producto);
+  }
+
+  return Array.from(unicos.values());
 }
 
 export function routeForBarcodeAction(
