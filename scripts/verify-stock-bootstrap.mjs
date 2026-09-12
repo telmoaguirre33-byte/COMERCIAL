@@ -4,10 +4,11 @@ import path from "node:path";
 const root = process.cwd();
 const migrationsDir = path.join(root, "supabase", "migrations");
 const baseName = "20260912230000_stock_import_base.sql";
+const repairName = "20260912230030_stock_import_single_tenant_fix.sql";
 const finalName = "20260912231600_stock_import_verify.sql";
 const libreriaNames = Array.from({ length: 10 }, (_, index) => `2026091223${String(index + 1).padStart(2, "0")}00_stock_libreria_${String(index + 1).padStart(2, "0")}.sql`);
 const sertecNames = Array.from({ length: 5 }, (_, index) => `2026091223${String(index + 11).padStart(2, "0")}00_stock_sertec_${String(index + 1).padStart(2, "0")}.sql`);
-const files = [baseName, ...libreriaNames, ...sertecNames, finalName];
+const files = [baseName, repairName, ...libreriaNames, ...sertecNames, finalName];
 
 for (const file of files) {
   const full = path.join(migrationsDir, file);
@@ -16,10 +17,11 @@ for (const file of files) {
 
 const read = (file) => fs.readFileSync(path.join(migrationsDir, file), "utf8");
 const base = read(baseName);
+const repair = read(repairName);
 const finalVerify = read(finalName);
 const libreria = libreriaNames.map(read).join("\n");
 const sertec = sertecNames.map(read).join("\n");
-const all = [base, libreria, sertec, finalVerify].join("\n");
+const all = [base, repair, libreria, sertec, finalVerify].join("\n");
 
 function payloadRows(text) {
   return [...text.matchAll(/\$stock\$\n([\s\S]*?)\n\$stock\$/g)]
@@ -52,8 +54,6 @@ for (const pattern of [
 }
 
 for (const required of [
-  "Lápiz y Papel",
-  "Sertec",
   "sigo_importaciones_stock",
   "not exists",
   "verified_rows",
@@ -63,4 +63,32 @@ for (const required of [
   if (!all.includes(required)) throw new Error(`Missing stock bootstrap safeguard: ${required}`);
 }
 
-console.log("Stock bootstrap verified: Librería 983, Sertec 417, total 1400; non-destructive guards present.");
+for (const required of [
+  "SIGO Administración",
+  "request.jwt.claim.sub",
+  "activa = false",
+  "tenant único SIGO Administración",
+]) {
+  if (!repair.includes(required)) throw new Error(`Missing single-tenant stock repair safeguard: ${required}`);
+}
+
+for (const required of [
+  "v_empresas_importadas <> 1",
+  "SIGO_STOCK_IMPORT_FINAL_TENANT_SPLIT_DETECTED",
+  "Librería=983/983 Computación=417/417 Total=1400/1400 tenant=1",
+]) {
+  if (!finalVerify.includes(required)) throw new Error(`Missing final single-tenant verification: ${required}`);
+}
+
+for (const sentinel of [
+  "\t0281\tCABLE NETMAK VGA 3M\t15600\t0",
+  "1113060410601\t\tCable USB CA IPHONE\t7600\t3",
+  "\t0290\tBoos chager\t27500\t0",
+  "\tGN122BXL\tcartucho 122 negro\t52020\t1",
+  "\t2EQI9400DS002\tmouse inalambrico yexa\t16000\t2",
+  "\t0304\tauricular chico samsung\t3000\t3",
+]) {
+  if (!sertec.includes(sentinel)) throw new Error(`Sertec source safeguard missing/corrupt: ${sentinel}`);
+}
+
+console.log("Stock bootstrap verified: one SIGO Administración tenant; Librería 983, Computación 417, total 1400; source sentinels and non-destructive guards present.");
