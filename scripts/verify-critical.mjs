@@ -51,6 +51,11 @@ const checks = [
     label: 'product numeric and stock-range validation',
   },
   {
+    file: 'src/SigoApp.tsx',
+    required: ['puedeEditarProductos', 'can(empresa.rol, "products.write")', 'Precio de venta', 'stockActual: null', 'Modo solo lectura', 'El stock actual no se edita acá', 'required={!editing}'],
+    label: 'sellable product setup, read-only warehouse UX and no direct live-stock overwrite',
+  },
+  {
     file: 'src/clientes.ts',
     required: ['validarEmail', 'validarLimiteCredito', 'mediosValidos', 'registrar_cobro_cliente_sigo_v2'],
     label: 'customer credit/payment validation',
@@ -89,6 +94,18 @@ const checks = [
     file: 'supabase/migrations/20260912032000_precio_venta_para_operacion.sql',
     required: ["'sales.read'", "'sales.write'", "'price_lists.read'", 'p.precio_venta', 'p.costo_actual', 'p.margen_ganancia'],
     label: 'operational sale price without sensitive commercial data',
+  },
+  {
+    file: 'supabase/migrations/20260912142200_productos_precio_operativo_seguro.sql',
+    required: ["'products.write'", "'sales.write'", "'price_lists.read'", 'v_puede_precio', 'PRECIO_VENTA_INVALID', 'STOCK_RANGE_INVALID'],
+    forbidden: ['delete from public.productos', 'truncate'],
+    label: 'admin product sale-price write without granting sensitive list access',
+  },
+  {
+    file: 'supabase/migrations/20260912142500_productos_edicion_no_pisa_stock_costo.sql',
+    required: ['p_stock_actual is not null', 'else p.stock_actual', 'p_costo_actual is not null', 'else p.costo_actual', 'v_puede_precio', 'p.empresa_id = p_empresa_id'],
+    forbidden: ['delete from public.productos', 'truncate'],
+    label: 'product master edits preserve concurrent stock and purchase costs',
   },
   {
     file: 'supabase/migrations/20260912111800_evitar_codigos_duplicados_por_empresa.sql',
