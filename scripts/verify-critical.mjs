@@ -25,9 +25,14 @@ const checks = [
     label: 'permission/backend role contract',
   },
   {
+    file: 'src/TenantSwitcher.tsx',
+    required: ['requestSeqRef', 'supabase.auth.getUser', 'cargarEmpresasVisibles'],
+    label: 'tenant switcher ignores stale refreshes',
+  },
+  {
     file: 'src/BarcodeScanner.tsx',
-    required: ['getUserMedia', 'BarcodeDetector', 'onProduct', 'ScanSource = "manual" | "wedge" | "camera"'],
-    label: 'manual/wedge/mobile-camera barcode scanner',
+    required: ['getUserMedia', 'BarcodeDetector', 'onProduct', 'ScanSource = "manual" | "wedge" | "camera"', 'empresaActivaRef'],
+    label: 'manual/wedge/mobile-camera barcode scanner with tenant isolation',
   },
   {
     file: 'src/barcode.ts',
@@ -35,9 +40,24 @@ const checks = [
     label: 'barcode lookup by barcode/internal code',
   },
   {
+    file: 'src/productos.ts',
+    required: ['validarNumeroNoNegativo', 'STOCK_RANGE_INVALID', 'STOCK_ABOVE_MAXIMUM', 'guardar_producto_sigo'],
+    label: 'product numeric and stock-range validation',
+  },
+  {
+    file: 'src/clientes.ts',
+    required: ['validarEmail', 'validarLimiteCredito', 'mediosValidos', 'registrar_cobro_cliente_sigo_v2'],
+    label: 'customer credit/payment validation',
+  },
+  {
     file: 'src/ventas.ts',
-    required: ['confirmar_venta_sigo_v2', 'consolidarItemsVenta', 'idempotencyKey', 'INSUFFICIENT_STOCK'],
-    label: 'transactional sale and duplicate-item consolidation',
+    required: ['confirmar_venta_sigo_v2', 'consolidarItemsVenta', 'MEDIOS_PAGO_VALIDOS', 'idempotencyKey', 'INSUFFICIENT_STOCK'],
+    label: 'transactional sale, payment validation and duplicate-item consolidation',
+  },
+  {
+    file: 'src/InformesOperativos.tsx',
+    required: ['empresaActivaRef', 'requestSeqRef'],
+    label: 'reports tenant isolation',
   },
   {
     file: 'supabase/migrations/20260909191300_multiempresa_base.sql',
