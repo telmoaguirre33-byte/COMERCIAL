@@ -49,6 +49,8 @@ export default function BarcodeScanner({
   const wedgeBufferRef = useRef("");
   const wedgeLastKeyAtRef = useRef(0);
   const lastCameraResolvedRef = useRef<{ code: string; at: number } | null>(null);
+  const empresaActivaRef = useRef(empresaId);
+  const requestRef = useRef(0);
 
   const detectorCtor = useMemo(() => {
     const w = window as typeof window & { BarcodeDetector?: BarcodeDetectorCtor };
@@ -62,7 +64,8 @@ export default function BarcodeScanner({
   async function resolveCode(raw: string, source: ScanSource = "manual") {
     const normalized = normalizeBarcode(raw);
     if (!normalized || inFlightRef.current) return;
-    if (!empresaId) {
+    const empresaOperacion = empresaId;
+    if (!empresaOperacion) {
       setError("Seleccioná una empresa antes de escanear.");
       focusScanner();
       return;
@@ -75,11 +78,13 @@ export default function BarcodeScanner({
       lastCameraResolvedRef.current = { code: normalized, at: now };
     }
 
+    const requestId = ++requestRef.current;
     inFlightRef.current = true;
     setBusy(true);
     setError("");
     try {
-      const matches = await buscarProductoPorCodigo(empresaId, normalized);
+      const matches = await buscarProductoPorCodigo(empresaOperacion, normalized);
+      if (empresaActivaRef.current !== empresaOperacion || requestRef.current !== requestId) return;
       if (matches.length === 0) {
         setError(`No se encontró un producto con el código ${normalized}.`);
         return;
@@ -93,11 +98,15 @@ export default function BarcodeScanner({
       if ("vibrate" in navigator) navigator.vibrate?.(40);
     } catch (e) {
       console.error(e);
-      setError("No se pudo consultar el código. Verificá conexión, permisos y empresa activa.");
+      if (empresaActivaRef.current === empresaOperacion && requestRef.current === requestId) {
+        setError("No se pudo consultar el código. Verificá conexión, permisos y empresa activa.");
+      }
     } finally {
-      inFlightRef.current = false;
-      setBusy(false);
-      if (source !== "camera") focusScanner();
+      if (empresaActivaRef.current === empresaOperacion && requestRef.current === requestId) {
+        inFlightRef.current = false;
+        setBusy(false);
+        if (source !== "camera") focusScanner();
+      }
     }
   }
 
@@ -121,17 +130,22 @@ export default function BarcodeScanner({
       return;
     }
 
+    const empresaOperacion = empresaId;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: "environment" } },
         audio: false,
       });
+      if (empresaActivaRef.current !== empresaOperacion) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       streamRef.current = stream;
       lastCameraResolvedRef.current = null;
       setCameraOpen(true);
     } catch (e) {
       console.error(e);
-      setError("No se pudo abrir la cámara. Revisá el permiso del navegador.");
+      if (empresaActivaRef.current === empresaOperacion) setError("No se pudo abrir la cámara. Revisá el permiso del navegador.");
     }
   }
 
@@ -173,8 +187,24 @@ export default function BarcodeScanner({
   }, [cameraOpen, detectorCtor]);
 
   useEffect(() => {
+    empresaActivaRef.current = empresaId;
+    requestRef.current += 1;
+    inFlightRef.current = false;
+    wedgeBufferRef.current = "";
+    wedgeLastKeyAtRef.current = 0;
+    lastCameraResolvedRef.current = null;
+    setCode("");
+    setError("");
+    setBusy(false);
+    if (cameraOpen || streamRef.current) stopCamera();
+    else focusScanner();
+    // El cambio de tenant invalida lecturas y cámara del tenant anterior.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empresaId]);
+
+  useEffect(() => {
     focusScanner();
-  }, [empresaId, action]);
+  }, [action]);
 
   useEffect(() => {
     function handleKeyboardWedge(event: KeyboardEvent) {
