@@ -41,10 +41,14 @@ function crearIdempotencyKey() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function normalizarIdentificador(valor: string | null | undefined) {
+  return String(valor ?? "").trim();
+}
+
 function consolidarItemsVenta(items: VentaItemSigoInput[]): VentaItemSigoInput[] {
   const cantidades = new Map<string, number>();
   for (const item of items) {
-    const productoId = item.productoId.trim();
+    const productoId = normalizarIdentificador(item.productoId);
     if (!productoId || !Number.isFinite(item.cantidad) || item.cantidad <= 0) {
       throw new Error("Hay un producto con cantidad inválida en el carrito.");
     }
@@ -117,12 +121,13 @@ async function verificarIntegridadVentas(
 }
 
 export async function listarVentasRecientesSigo(empresaId: string, limite = 10): Promise<VentaRecienteSigo[]> {
-  if (!empresaId) return [];
+  const empresaNormalizada = normalizarIdentificador(empresaId);
+  if (!empresaNormalizada) return [];
   const safeLimit = Math.min(Math.max(Math.trunc(limite), 1), 25);
   const { data, error } = await supabase
     .from("ventas_sigo")
     .select("id,numero,total,medio_pago,cliente_id,created_at")
-    .eq("empresa_id", empresaId)
+    .eq("empresa_id", empresaNormalizada)
     .eq("estado", "confirmada")
     .order("created_at", { ascending: false })
     .limit(safeLimit);
@@ -136,17 +141,20 @@ export async function listarVentasRecientesSigo(empresaId: string, limite = 10):
     cliente_id: string | null;
     created_at: string;
   }>;
-  const integridad = await verificarIntegridadVentas(empresaId, rows);
+  const integridad = await verificarIntegridadVentas(empresaNormalizada, rows);
 
-  return rows.map((venta) => ({
-    id: venta.id,
-    numero: venta.numero,
-    total: Number(venta.total || 0),
-    medioPago: venta.medio_pago,
-    clienteId: venta.cliente_id,
-    createdAt: venta.created_at,
-    integridad: integridad.get(venta.id) ?? "no_verificada",
-  }));
+  return rows.map((venta) => {
+    const total = Number(venta.total);
+    return {
+      id: venta.id,
+      numero: venta.numero,
+      total: Number.isFinite(total) ? total : 0,
+      medioPago: MEDIOS_PAGO_VALIDOS.includes(venta.medio_pago) ? venta.medio_pago : "otro",
+      clienteId: venta.cliente_id,
+      createdAt: venta.created_at,
+      integridad: integridad.get(venta.id) ?? "no_verificada",
+    };
+  });
 }
 
 export async function confirmarVentaSigo(input: {
@@ -156,33 +164,35 @@ export async function confirmarVentaSigo(input: {
   clienteId?: string | null;
   idempotencyKey?: string;
 }): Promise<{ ventaId: string; idempotencyKey: string; integridad: IntegridadVentaSigo }> {
-  if (!input.empresaId) throw new Error("Seleccioná una empresa activa antes de vender.");
+  const empresaId = normalizarIdentificador(input.empresaId);
+  const clienteId = normalizarIdentificador(input.clienteId) || null;
+  if (!empresaId) throw new Error("Seleccioná una empresa activa antes de vender.");
   if (input.items.length === 0) throw new Error("Agregá al menos un producto antes de confirmar.");
   if (!MEDIOS_PAGO_VALIDOS.includes(input.medioPago)) throw new Error("Seleccioná un medio de pago válido.");
-  if (input.medioPago === "cuenta_corriente" && !input.clienteId) {
+  if (input.medioPago === "cuenta_corriente" && !clienteId) {
     throw new Error("Cuenta corriente requiere seleccionar un cliente.");
   }
 
   const itemsConsolidados = consolidarItemsVenta(input.items);
-  const idempotencyKey = input.idempotencyKey ?? crearIdempotencyKey();
-  if (!idempotencyKey.trim()) throw new Error("No se pudo generar una clave segura para confirmar la venta.");
+  const idempotencyKey = normalizarIdentificador(input.idempotencyKey ?? crearIdempotencyKey());
+  if (!idempotencyKey) throw new Error("No se pudo generar una clave segura para confirmar la venta.");
 
   const { data, error } = await supabase.rpc("confirmar_venta_sigo_v2", {
-    p_empresa_id: input.empresaId,
+    p_empresa_id: empresaId,
     p_items: itemsConsolidados.map((item) => ({
       producto_id: item.productoId,
       cantidad: item.cantidad,
     })),
     p_medio_pago: input.medioPago,
     p_idempotency_key: idempotencyKey,
-    p_cliente_id: input.clienteId ?? null,
+    p_cliente_id: clienteId,
   });
 
   if (error) throw new Error(mensajeVenta(error));
-  if (!data) throw new Error("La venta no devolvió comprobante. No la repitas hasta verificar su estado.");
+  const ventaId = normalizarIdentificador(typeof data === "string" ? data : String(data ?? ""));
+  if (!ventaId) throw new Error("La venta no devolvió comprobante. No la repitas hasta verificar su estado.");
 
-  const ventaId = data as string;
-  const integridad = await verificarIntegridadVentas(input.empresaId, [{ id: ventaId, medio_pago: input.medioPago }])
+  const integridad = await verificarIntegridadVentas(empresaId, [{ id: ventaId, medio_pago: input.medioPago }])
     .then((mapa) => mapa.get(ventaId) ?? "no_verificada")
     .catch(() => "no_verificada" as const);
 
