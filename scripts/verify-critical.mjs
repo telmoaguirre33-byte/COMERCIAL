@@ -51,8 +51,8 @@ const checks = [
   },
   {
     file: 'src/ventas.ts',
-    required: ['confirmar_venta_sigo_v2', 'consolidarItemsVenta', 'MEDIOS_PAGO_VALIDOS', 'idempotencyKey', 'INSUFFICIENT_STOCK'],
-    label: 'transactional sale, payment validation and duplicate-item consolidation',
+    required: ['confirmar_venta_sigo_v2', 'consolidarItemsVenta', 'MEDIOS_PAGO_VALIDOS', 'idempotencyKey', 'INSUFFICIENT_STOCK', 'normalizarIdentificador', 'Number.isFinite(total)', 'p_empresa_id: empresaId', 'p_cliente_id: clienteId'],
+    label: 'transactional sale, normalized tenant/client identity and safe totals',
   },
   {
     file: 'src/compras.ts',
