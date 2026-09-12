@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ClientesOperativos from "./ClientesOperativos";
 import ComprasOperativas from "./ComprasOperativas";
 import InformesOperativos from "./InformesOperativos";
+import MatrizAdmin from "./MatrizAdmin";
 import PortalCliente from "./PortalCliente";
 import SigoApp from "./SigoApp";
 import TenantSwitcher from "./TenantSwitcher";
@@ -48,6 +49,8 @@ export default function SigoRoot() {
   const [errorEmpresa, setErrorEmpresa] = useState("");
   const [autoRetryCount, setAutoRetryCount] = useState(0);
   const [emptyTenantMode, setEmptyTenantMode] = useState<EmptyTenantMode>("checking");
+  const [isSuperadmin, setIsSuperadmin] = useState(false);
+  const [matrixMode, setMatrixMode] = useState(false);
   const autoProvisionAttemptedRef = useRef(false);
 
   const permitidos = useMemo(
@@ -58,11 +61,26 @@ export default function SigoRoot() {
   const handleEmpresaChange = useCallback((empresa: EmpresaOperativa | null) => {
     setEmpresaActiva(empresa);
     setTenantReady(true);
+    setMatrixMode(false);
     setWorkspace(empresa ? workspaceInicial(empresa.rol) : "operacion");
     if (empresa) {
       setAutoRetryCount(0);
       setEmptyTenantMode("checking");
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void supabase.rpc("es_superadmin_sigo").then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) {
+        console.warn("No se pudo verificar el rol Matriz", error);
+        setIsSuperadmin(false);
+        return;
+      }
+      setIsSuperadmin(Boolean(data));
+    });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -154,7 +172,21 @@ export default function SigoRoot() {
 
   function abrirWorkspace(destino: SigoWorkspace) {
     if (!empresaActiva || !workspacePermitido(empresaActiva.rol, destino)) return;
+    setMatrixMode(false);
     setWorkspace(destino);
+  }
+
+  async function abrirEmpresaSoporte(empresaId: string) {
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) throw authError ?? new Error("AUTH_REQUIRED");
+    const empresas = await cargarMisEmpresas();
+    const empresa = resolverEmpresaActiva(empresas, empresaId, authData.user.id);
+    if (!empresa || empresa.empresa_id !== empresaId) throw new Error("SUPPORT_COMPANY_NOT_VISIBLE");
+    setEmpresaActiva(empresa);
+    setTenantState("ready");
+    setMatrixMode(false);
+    setWorkspace(workspaceInicial(empresa.rol));
+    setTenantRetryKey((value) => value + 1);
   }
 
   async function crearPrimeraEmpresa(event: React.FormEvent<HTMLFormElement>) {
@@ -234,6 +266,10 @@ export default function SigoRoot() {
     return <main className="sigo-onboarding-card" role="alert"><h1>Acceso limitado</h1><p>Tu perfil no tiene habilitada esta operación.</p></main>;
   })() : null;
 
+  const contenidoPrincipal = isSuperadmin && matrixMode
+    ? <MatrizAdmin onOpenEmpresa={abrirEmpresaSoporte} />
+    : workspaceContent;
+
   return (
     <div className="sigo-root">
       <style>{`
@@ -263,22 +299,29 @@ export default function SigoRoot() {
         .sigo-recovery-foot { border-top:1px solid #eef2f7; padding:16px 28px 20px; color:#94a3b8; font-size:12px; }
       `}</style>
 
-      <div className="sigo-tenant-bar" role="region" aria-label="Contexto operativo SIGO">
+      <div className={`sigo-tenant-bar ${matrixMode ? "sigo-tenant-bar-matrix" : ""}`} role="region" aria-label="Contexto operativo SIGO">
         <div className="sigo-tenant-copy">
           <strong>SIGO</strong>
           <span>Sistema Inteligente de Gestión Operativa</span>
-          {empresaActiva && <small>{empresaActiva.empresa_nombre} · {etiquetaRol(empresaActiva.rol)}</small>}
+          {matrixMode && isSuperadmin
+            ? <small>Matriz · Superadmin</small>
+            : empresaActiva && <small>{empresaActiva.empresa_nombre} · {etiquetaRol(empresaActiva.rol)}</small>}
         </div>
-        {empresaActiva && (
-          <div className="topbar-actions" role="navigation" aria-label="Módulos habilitados">
-            {permitidos.map((item) => (
-              <button key={item} className={workspace === item ? "primary-button" : "admin-button"} aria-current={workspace === item ? "page" : undefined} onClick={() => abrirWorkspace(item)}>
-                {WORKSPACE_LABELS[item]}
-              </button>
-            ))}
-          </div>
+        <div className="topbar-actions sigo-context-actions" role="navigation" aria-label="Módulos habilitados">
+          {isSuperadmin ? (
+            <button className={matrixMode ? "primary-button" : "admin-button"} onClick={() => setMatrixMode(true)}>Matriz</button>
+          ) : null}
+          {!matrixMode && empresaActiva ? permitidos.map((item) => (
+            <button key={item} className={workspace === item ? "primary-button" : "admin-button"} aria-current={workspace === item ? "page" : undefined} onClick={() => abrirWorkspace(item)}>
+              {WORKSPACE_LABELS[item]}
+            </button>
+          )) : null}
+        </div>
+        {matrixMode && isSuperadmin ? (
+          <button className="admin-button sigo-return-company" type="button" onClick={() => setMatrixMode(false)} disabled={!empresaActiva}>Volver a empresa</button>
+        ) : (
+          <TenantSwitcher key={tenantRetryKey} value={empresaActiva?.empresa_id ?? null} onChange={handleEmpresaChange} onStateChange={setTenantState} />
         )}
-        <TenantSwitcher key={tenantRetryKey} value={empresaActiva?.empresa_id ?? null} onChange={handleEmpresaChange} onStateChange={setTenantState} />
       </div>
 
       {!tenantReady || tenantState === "loading" ? (
@@ -289,7 +332,7 @@ export default function SigoRoot() {
           <div className="sigo-recovery-actions"><button className="primary-button" type="button" onClick={() => { setAutoRetryCount(0); setTenantRetryKey((value) => value + 1); }}>Reintentar ahora</button><button className="sigo-recovery-secondary" type="button" onClick={() => void cambiarUsuario()}>Volver al ingreso</button></div>
           <div className="sigo-recovery-foot">Tus datos permanecen protegidos. SIGO no modifica información mientras completa la reconexión.</div>
         </main>
-      ) : empresaActiva ? workspaceContent : emptyTenantMode === "member" ? (
+      ) : empresaActiva ? contenidoPrincipal : emptyTenantMode === "member" ? (
         <main className="sigo-recovery" role="status" aria-live="polite">
           <div className="sigo-recovery-head">
             <div className="sigo-recovery-brand"><div className="sigo-recovery-mark">SG</div><div><strong>SIGO</strong><span>Sistema Inteligente de Gestión Operativa</span></div></div>
