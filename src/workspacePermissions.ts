@@ -5,7 +5,6 @@ export type SigoWorkspace = "operacion" | "clientes" | "compras" | "informes";
 const WORKSPACES_BY_ROLE: Record<RolEmpresaSigo, readonly SigoWorkspace[]> = {
   owner: ["operacion", "clientes", "compras", "informes"],
   admin: ["operacion", "clientes", "compras", "informes"],
-  administrative: ["operacion", "clientes", "compras", "informes"],
   seller: ["operacion", "clientes"],
   // Depósito opera catálogo/stock, pero no entra a Compras para no exponer costos
   // hasta disponer de una vista de recepción específica sin valores sensibles.
@@ -31,7 +30,6 @@ export function etiquetaRol(rol: RolEmpresaSigo): string {
   const etiquetas: Record<RolEmpresaSigo, string> = {
     owner: "Propietario",
     admin: "Administrador",
-    administrative: "Administrativo",
     seller: "Vendedor",
     warehouse: "Depósito",
     client: "Cliente",
