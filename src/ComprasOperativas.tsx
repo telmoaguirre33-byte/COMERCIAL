@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import BarcodeScanner from "./BarcodeScanner";
 import type { BarcodeProduct } from "./barcode";
-import { listarProductosSigo, type ProductoSigo } from "./productos";
+import { analizarFacturaCompraSigo, type FacturaCompraIA, type FacturaItemIA } from "./facturaIA";
+import { guardarProductoSigo, listarProductosSigo, type ProductoSigo } from "./productos";
 import {
   confirmarCompraSigo,
   guardarProveedorSigo,
@@ -31,6 +32,30 @@ function nuevaLinea(): Linea {
   return { key: nuevaClave(), producto_id: "", cantidad: 1, costo_unitario: 0 };
 }
 
+function normalizar(value?: string | null) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function digitos(value?: string | null) {
+  return (value ?? "").replace(/\D/g, "");
+}
+
+function encontrarProducto(item: FacturaItemIA, productos: ProductoSigo[]) {
+  const codigos = [item.codigo_barras, item.codigo].filter(Boolean).map((x) => String(x).trim());
+  for (const codigo of codigos) {
+    const exacto = productos.find((p) => p.codigo_barras === codigo || p.codigo_interno === codigo);
+    if (exacto) return exacto;
+  }
+  const nombre = normalizar(item.descripcion);
+  if (!nombre) return undefined;
+  return productos.find((p) => normalizar(p.nombre) === nombre);
+}
+
 export default function ComprasOperativas({ empresaId }: { empresaId: string }) {
   const [proveedores, setProveedores] = useState<ProveedorSigo[]>([]);
   const [compras, setCompras] = useState<CompraSigo[]>([]);
@@ -46,6 +71,12 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
   const [nuevoProveedor, setNuevoProveedor] = useState("");
   const [nuevoCuit, setNuevoCuit] = useState("");
   const [ultimaConciliacion, setUltimaConciliacion] = useState<UltimaConciliacion | null>(null);
+  const [facturaIA, setFacturaIA] = useState<FacturaCompraIA | null>(null);
+  const [facturaProcesando, setFacturaProcesando] = useState(false);
+  const [facturaAplicando, setFacturaAplicando] = useState(false);
+  const [facturaMensaje, setFacturaMensaje] = useState("");
+  const fotoRef = useRef<HTMLInputElement | null>(null);
+  const archivoRef = useRef<HTMLInputElement | null>(null);
   const idempotencyKeyRef = useRef(nuevaClave());
   const empresaActivaRef = useRef(empresaId);
 
@@ -86,9 +117,10 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
     setNuevoProveedor("");
     setNuevoCuit("");
     setUltimaConciliacion(null);
+    setFacturaIA(null);
+    setFacturaMensaje("");
     setError("");
     void cargar(empresaId);
-    // cargar usa el tenant capturado para ignorar respuestas tardías de otra empresa.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresaId]);
 
@@ -96,6 +128,8 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
     () => lineas.reduce((sum, l) => sum + Number(l.cantidad || 0) * Number(l.costo_unitario || 0), 0),
     [lineas]
   );
+
+  const proveedorMap = useMemo(() => new Map(proveedores.map((p) => [p.id, p.razon_social])), [proveedores]);
 
   function editarLinea(key: string, patch: Partial<Linea>) {
     setLineas((actual) => actual.map((l) => l.key === key ? { ...l, ...patch } : l));
@@ -119,11 +153,9 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
           ? { ...linea, cantidad: Number(linea.cantidad || 0) + 1 }
           : linea);
       }
-
       if (actual.length === 1 && !actual[0].producto_id) {
         return [{ ...actual[0], producto_id: maestro.id, cantidad: 1, costo_unitario: costo }];
       }
-
       return [...actual, { key: nuevaClave(), producto_id: maestro.id, cantidad: 1, costo_unitario: costo }];
     });
   }
@@ -149,6 +181,142 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
     }
   }
 
+  async function leerFactura(file?: File | null) {
+    if (!file || facturaProcesando || facturaAplicando) return;
+    const empresaOperacion = empresaId;
+    setFacturaProcesando(true);
+    setFacturaIA(null);
+    setFacturaMensaje("");
+    setError("");
+    try {
+      const resultado = await analizarFacturaCompraSigo(empresaOperacion, file);
+      if (empresaActivaRef.current !== empresaOperacion) return;
+      setFacturaIA(resultado);
+      setFacturaMensaje(`IA detectó ${resultado.items.length} ítem${resultado.items.length === 1 ? "" : "s"}. Revisá y luego aplicá la factura.`);
+    } catch (err) {
+      if (empresaActivaRef.current === empresaOperacion) {
+        setError(err instanceof Error ? err.message : "No se pudo analizar la factura.");
+      }
+    } finally {
+      if (empresaActivaRef.current === empresaOperacion) setFacturaProcesando(false);
+      if (fotoRef.current) fotoRef.current.value = "";
+      if (archivoRef.current) archivoRef.current.value = "";
+    }
+  }
+
+  async function aplicarFacturaAnalizada() {
+    if (!facturaIA || facturaAplicando || facturaProcesando) return;
+    const empresaOperacion = empresaId;
+    setFacturaAplicando(true);
+    setError("");
+    setFacturaMensaje("");
+    try {
+      let proveedoresActuales = [...proveedores];
+      let proveedor = undefined as ProveedorSigo | undefined;
+      const cuitFactura = digitos(facturaIA.proveedor.cuit);
+      if (cuitFactura) proveedor = proveedoresActuales.find((p) => digitos(p.cuit) === cuitFactura);
+      if (!proveedor && facturaIA.proveedor.razon_social) {
+        const nombreProveedor = normalizar(facturaIA.proveedor.razon_social);
+        proveedor = proveedoresActuales.find((p) => normalizar(p.razon_social) === nombreProveedor);
+      }
+      if (!proveedor) {
+        if (!facturaIA.proveedor.razon_social) {
+          throw new Error("La IA no pudo leer el proveedor. Crealo o seleccionalo manualmente antes de aplicar la factura.");
+        }
+        proveedor = await guardarProveedorSigo({
+          empresaId: empresaOperacion,
+          razonSocial: facturaIA.proveedor.razon_social,
+          cuit: cuitFactura.length === 11 ? cuitFactura : undefined,
+        });
+        if (empresaActivaRef.current !== empresaOperacion) return;
+        proveedoresActuales = [...proveedoresActuales, proveedor].sort((a, b) => a.razon_social.localeCompare(b.razon_social));
+        setProveedores(proveedoresActuales);
+      }
+      setProveedorId(proveedor.id);
+
+      let productosActuales = await listarProductosSigo(empresaOperacion);
+      if (empresaActivaRef.current !== empresaOperacion) return;
+      const nuevasLineas = new Map<string, Linea>();
+      let creados = 0;
+      let existentes = 0;
+
+      for (const item of facturaIA.items) {
+        let producto = encontrarProducto(item, productosActuales);
+        if (!producto) {
+          const codigoBarras = item.codigo_barras?.trim() || null;
+          const codigoInterno = item.codigo?.trim() && item.codigo?.trim() !== codigoBarras ? item.codigo.trim() : null;
+          const id = await guardarProductoSigo({
+            empresaId: empresaOperacion,
+            nombre: item.descripcion,
+            codigoBarras,
+            codigoInterno,
+            costoActual: item.costo_unitario,
+            costoUltimaCompra: item.costo_unitario,
+            precioVenta: null,
+            stockActual: null,
+            stockMinimo: null,
+            stockMaximo: null,
+          });
+          if (empresaActivaRef.current !== empresaOperacion) return;
+          producto = {
+            id,
+            empresa_id: empresaOperacion,
+            codigo_interno: codigoInterno,
+            codigo_barras: codigoBarras,
+            nombre: item.descripcion,
+            descripcion: null,
+            categoria: null,
+            marca: null,
+            proveedor: facturaIA.proveedor.razon_social,
+            costo_actual: item.costo_unitario,
+            costo_ultima_compra: item.costo_unitario,
+            precio_venta: null,
+            margen_ganancia: null,
+            margen_porcentaje: null,
+            stock_actual: 0,
+            stock_minimo: null,
+            stock_maximo: null,
+          };
+          productosActuales = [...productosActuales, producto];
+          creados += 1;
+        } else {
+          existentes += 1;
+        }
+
+        const previa = nuevasLineas.get(producto.id);
+        if (previa) {
+          const cantidadTotal = previa.cantidad + item.cantidad;
+          const costoPonderado = cantidadTotal > 0
+            ? ((previa.cantidad * previa.costo_unitario) + (item.cantidad * item.costo_unitario)) / cantidadTotal
+            : item.costo_unitario;
+          nuevasLineas.set(producto.id, { ...previa, cantidad: cantidadTotal, costo_unitario: costoPonderado });
+        } else {
+          nuevasLineas.set(producto.id, {
+            key: nuevaClave(),
+            producto_id: producto.id,
+            cantidad: item.cantidad,
+            costo_unitario: item.costo_unitario,
+          });
+        }
+      }
+
+      if (nuevasLineas.size === 0) throw new Error("La factura no tiene líneas válidas para cargar.");
+      setProductos(productosActuales.sort((a, b) => a.nombre.localeCompare(b.nombre)));
+      setLineas([...nuevasLineas.values()]);
+      if (facturaIA.fecha && /^\d{4}-\d{2}-\d{2}$/.test(facturaIA.fecha)) setFecha(facturaIA.fecha);
+      if (facturaIA.tipo_comprobante) setTipo(facturaIA.tipo_comprobante);
+      if (facturaIA.numero_comprobante) setNumero(facturaIA.numero_comprobante);
+      idempotencyKeyRef.current = nuevaClave();
+      setFacturaMensaje(`Factura preparada: ${existentes} producto${existentes === 1 ? "" : "s"} existente${existentes === 1 ? "" : "s"} y ${creados} nuevo${creados === 1 ? "" : "s"}. Revisá las líneas y confirmá para ingresar el stock.`);
+    } catch (err) {
+      if (empresaActivaRef.current === empresaOperacion) {
+        setError(err instanceof Error ? err.message : "No se pudo preparar la compra desde la factura.");
+      }
+    } finally {
+      if (empresaActivaRef.current === empresaOperacion) setFacturaAplicando(false);
+    }
+  }
+
   async function confirmar(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (saving) return;
@@ -160,7 +328,6 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
       if (!proveedores.some((p) => p.id === proveedorId && p.empresa_id === empresaOperacion && p.activo)) {
         throw new Error("El proveedor seleccionado ya no está disponible en la empresa activa. Actualizá y volvé a seleccionar.");
       }
-
       const validas = lineas.filter((l) => l.producto_id && l.cantidad > 0 && l.costo_unitario >= 0);
       if (validas.length !== lineas.length) throw new Error("Completá correctamente todas las líneas de la compra.");
       const productoIds = validas.map((l) => l.producto_id);
@@ -198,6 +365,8 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
       idempotencyKeyRef.current = nuevaClave();
       setLineas([nuevaLinea()]);
       setNumero("");
+      setFacturaIA(null);
+      setFacturaMensaje("");
       await cargar(empresaOperacion);
     } catch (err) {
       if (empresaActivaRef.current === empresaOperacion) {
@@ -215,7 +384,7 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
           <h2>Compras / Proveedores</h2>
           <p>Recepción tenant-safe: confirmar una compra actualiza stock y último costo en una sola transacción.</p>
         </div>
-        <button className="admin-button" onClick={() => void cargar()} disabled={loading || saving}>Actualizar</button>
+        <button className="admin-button" onClick={() => void cargar()} disabled={loading || saving || facturaProcesando || facturaAplicando}>Actualizar</button>
       </div>
 
       {error && <div className="panel"><p className="form-error" role="alert">{error}</p></div>}
@@ -233,6 +402,59 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
           </p>
         </div>
       )}
+
+      <div className="panel" style={{ border: "1px solid #bfdbfe", background: "linear-gradient(135deg,#eff6ff,#ffffff)" }}>
+        <div className="page-header">
+          <div>
+            <h3 style={{ marginBottom: 6 }}>📷 Escanear factura con IA</h3>
+            <p style={{ margin: 0 }}>Sacá una foto o elegí una imagen. SIGO lee proveedor, fecha, comprobante, productos, cantidades y costos. Si un producto no existe, lo crea; el stock se modifica recién cuando confirmás la compra.</p>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#1d4ed8" }}>IA · revisión antes de stock</span>
+        </div>
+        <input ref={fotoRef} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" hidden onChange={(e) => void leerFactura(e.target.files?.[0])} />
+        <input ref={archivoRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(e) => void leerFactura(e.target.files?.[0])} />
+        <div className="form-actions" style={{ justifyContent: "flex-start", gap: 10, flexWrap: "wrap" }}>
+          <button type="button" className="primary-button" disabled={facturaProcesando || facturaAplicando || saving} onClick={() => fotoRef.current?.click()}>{facturaProcesando ? "Analizando…" : "📸 Tomar foto de factura"}</button>
+          <button type="button" className="admin-button" disabled={facturaProcesando || facturaAplicando || saving} onClick={() => archivoRef.current?.click()}>Elegir foto / escaneo</button>
+        </div>
+
+        {facturaMensaje && <p style={{ fontWeight: 700, color: "#1e3a8a" }}>{facturaMensaje}</p>}
+
+        {facturaIA && (
+          <div style={{ marginTop: 16 }}>
+            <div className="form-grid">
+              <div className="form-group"><label>Proveedor detectado</label><div><strong>{facturaIA.proveedor.razon_social ?? "No leído"}</strong>{facturaIA.proveedor.cuit ? ` · CUIT ${facturaIA.proveedor.cuit}` : ""}</div></div>
+              <div className="form-group"><label>Comprobante</label><div>{facturaIA.tipo_comprobante ?? "Factura"} {facturaIA.numero_comprobante ?? ""}</div></div>
+              <div className="form-group"><label>Fecha</label><div>{facturaIA.fecha ?? "No leída"}</div></div>
+              <div className="form-group"><label>Confianza IA</label><div>{Math.round(facturaIA.confianza_general * 100)}%</div></div>
+            </div>
+            <div className="table-wrapper" style={{ marginTop: 14 }}>
+              <table className="products-table">
+                <thead><tr><th>Producto leído</th><th>Código</th><th>Cant.</th><th>Costo unit.</th><th>Confianza</th><th>Estado</th></tr></thead>
+                <tbody>
+                  {facturaIA.items.map((item, index) => {
+                    const existente = encontrarProducto(item, productos);
+                    return (
+                      <tr key={`${item.descripcion}-${index}`}>
+                        <td><strong>{item.descripcion}</strong></td>
+                        <td>{item.codigo_barras ?? item.codigo ?? "-"}</td>
+                        <td>{item.cantidad}</td>
+                        <td>$ {item.costo_unitario.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
+                        <td>{Math.round(item.confianza * 100)}%</td>
+                        <td>{existente ? `Existente: ${existente.nombre}` : "NUEVO · se creará"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="form-actions" style={{ justifyContent: "flex-start" }}>
+              <button type="button" className="primary-button" disabled={facturaAplicando || facturaProcesando || saving} onClick={() => void aplicarFacturaAnalizada()}>{facturaAplicando ? "Preparando compra…" : "Usar datos de esta factura"}</button>
+              <button type="button" className="admin-button" disabled={facturaAplicando || facturaProcesando || saving} onClick={() => { setFacturaIA(null); setFacturaMensaje(""); }}>Descartar lectura</button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="panel">
         <h3>Alta rápida de proveedor</h3>
@@ -278,13 +500,28 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
           <button type="button" className="admin-button" onClick={() => setLineas((actual) => [...actual, nuevaLinea()])}>+ Agregar producto</button>
           <div><strong>Total compra: $ {total.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</strong></div>
         </div>
-        <div className="form-actions"><button type="submit" className="primary-button" disabled={saving || loading || !proveedorId}>{saving ? "Confirmando…" : "Confirmar compra e ingresar stock"}</button></div>
+        <div className="form-actions"><button type="submit" className="primary-button" disabled={saving || loading || !proveedorId || facturaAplicando}>{saving ? "Confirmando…" : "Confirmar compra e ingresar stock"}</button></div>
       </form>
 
       <div className="panel">
         <h3>Últimas compras</h3>
         {loading ? <p>Cargando…</p> : compras.length === 0 ? <p>Sin compras confirmadas.</p> : (
-          <div className="table-wrapper"><table className="products-table"><thead><tr><th>Fecha</th><th>Proveedor</th><th>Comprobante</th><th>Total</th><th>Estado</th></tr></thead><tbody>{compras.map((c) => <tr key={c.id}><td>{c.fecha_compra}</td><td>{proveedores.find((p) => p.id === c.proveedor_id)?.razon_social ?? "-"}</td><td>{[c.tipo_comprobante, c.numero_comprobante].filter(Boolean).join(" ") || "-"}</td><td>$ {Number(c.total).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td><td>{c.estado}</td></tr>)}</tbody></table></div>
+          <div className="table-wrapper">
+            <table className="products-table">
+              <thead><tr><th>Fecha</th><th>Proveedor</th><th>Comprobante</th><th>Total</th><th>Estado</th></tr></thead>
+              <tbody>
+                {compras.map((compra) => (
+                  <tr key={compra.id}>
+                    <td>{compra.fecha_compra}</td>
+                    <td>{proveedorMap.get(compra.proveedor_id) ?? "Proveedor"}</td>
+                    <td>{[compra.tipo_comprobante, compra.numero_comprobante].filter(Boolean).join(" ") || "-"}</td>
+                    <td>$ {Number(compra.total ?? 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
+                    <td>{compra.estado}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
