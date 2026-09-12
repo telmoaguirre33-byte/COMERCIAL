@@ -20,8 +20,13 @@ type UltimaConciliacion = {
   resultado: VerificacionCompraSigo;
 };
 
+function nuevaClave() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function nuevaLinea(): Linea {
-  return { key: crypto.randomUUID(), producto_id: "", cantidad: 1, costo_unitario: 0 };
+  return { key: nuevaClave(), producto_id: "", cantidad: 1, costo_unitario: 0 };
 }
 
 export default function ComprasOperativas({ empresaId }: { empresaId: string }) {
@@ -39,32 +44,50 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
   const [nuevoProveedor, setNuevoProveedor] = useState("");
   const [nuevoCuit, setNuevoCuit] = useState("");
   const [ultimaConciliacion, setUltimaConciliacion] = useState<UltimaConciliacion | null>(null);
-  const idempotencyKeyRef = useRef(crypto.randomUUID());
+  const idempotencyKeyRef = useRef(nuevaClave());
+  const empresaActivaRef = useRef(empresaId);
 
-  async function cargar() {
+  async function cargar(targetEmpresaId = empresaId) {
     setLoading(true);
     setError("");
     try {
       const [ps, cs, prods] = await Promise.all([
-        listarProveedoresSigo(empresaId),
-        listarComprasSigo(empresaId),
-        listarProductosSigo(empresaId),
+        listarProveedoresSigo(targetEmpresaId),
+        listarComprasSigo(targetEmpresaId),
+        listarProductosSigo(targetEmpresaId),
       ]);
+      if (empresaActivaRef.current !== targetEmpresaId) return;
       setProveedores(ps);
       setCompras(cs);
       setProductos(prods);
-      if (!proveedorId && ps[0]) setProveedorId(ps[0].id);
+      setProveedorId((actual) => actual && ps.some((p) => p.id === actual) ? actual : (ps[0]?.id ?? ""));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo cargar Compras");
+      if (empresaActivaRef.current === targetEmpresaId) {
+        setError(err instanceof Error ? err.message : "No se pudo cargar Compras");
+      }
     } finally {
-      setLoading(false);
+      if (empresaActivaRef.current === targetEmpresaId) setLoading(false);
     }
   }
 
   useEffect(() => {
-    idempotencyKeyRef.current = crypto.randomUUID();
+    empresaActivaRef.current = empresaId;
+    idempotencyKeyRef.current = nuevaClave();
+    setProveedores([]);
+    setCompras([]);
+    setProductos([]);
+    setProveedorId("");
+    setFecha(new Date().toISOString().slice(0, 10));
+    setTipo("Factura");
+    setNumero("");
+    setLineas([nuevaLinea()]);
+    setNuevoProveedor("");
+    setNuevoCuit("");
     setUltimaConciliacion(null);
-    void cargar();
+    setError("");
+    void cargar(empresaId);
+    // cargar usa el tenant capturado para ignorar respuestas tardías de otra empresa.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresaId]);
 
   const total = useMemo(
@@ -78,29 +101,34 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
 
   async function crearProveedor() {
     if (!nuevoProveedor.trim()) return;
+    const empresaOperacion = empresaId;
     setSaving(true);
     setError("");
     try {
-      const creado = await guardarProveedorSigo({ empresaId, razonSocial: nuevoProveedor, cuit: nuevoCuit });
+      const creado = await guardarProveedorSigo({ empresaId: empresaOperacion, razonSocial: nuevoProveedor, cuit: nuevoCuit });
+      if (empresaActivaRef.current !== empresaOperacion) return;
       setProveedores((actual) => [...actual, creado].sort((a, b) => a.razon_social.localeCompare(b.razon_social)));
       setProveedorId(creado.id);
       setNuevoProveedor("");
       setNuevoCuit("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo crear el proveedor");
+      if (empresaActivaRef.current === empresaOperacion) {
+        setError(err instanceof Error ? err.message : "No se pudo crear el proveedor");
+      }
     } finally {
-      setSaving(false);
+      if (empresaActivaRef.current === empresaOperacion) setSaving(false);
     }
   }
 
   async function confirmar(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (saving) return;
+    const empresaOperacion = empresaId;
     setSaving(true);
     setError("");
     setUltimaConciliacion(null);
     try {
-      if (!proveedores.some((p) => p.id === proveedorId && p.empresa_id === empresaId && p.activo)) {
+      if (!proveedores.some((p) => p.id === proveedorId && p.empresa_id === empresaOperacion && p.activo)) {
         throw new Error("El proveedor seleccionado ya no está disponible en la empresa activa. Actualizá y volvé a seleccionar.");
       }
 
@@ -112,7 +140,8 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
       }
 
       const items = validas.map(({ producto_id, cantidad, costo_unitario }) => ({ producto_id, cantidad, costo_unitario }));
-      const productosFrescos = await listarProductosSigo(empresaId);
+      const productosFrescos = await listarProductosSigo(empresaOperacion);
+      if (empresaActivaRef.current !== empresaOperacion) return;
       const productosMap = new Map(productosFrescos.map((p) => [p.id, p]));
       for (const item of items) {
         if (!productosMap.has(item.producto_id)) {
@@ -124,7 +153,7 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
       );
 
       const compraId = await confirmarCompraSigo({
-        empresaId,
+        empresaId: empresaOperacion,
         proveedorId,
         items,
         fecha,
@@ -132,17 +161,21 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
         numeroComprobante: numero,
         idempotencyKey: idempotencyKeyRef.current,
       });
+      if (empresaActivaRef.current !== empresaOperacion) return;
 
-      const resultado = await verificarCompraSigo({ empresaId, compraId, items, stockAntes });
+      const resultado = await verificarCompraSigo({ empresaId: empresaOperacion, compraId, items, stockAntes });
+      if (empresaActivaRef.current !== empresaOperacion) return;
       setUltimaConciliacion({ compraId, resultado });
-      idempotencyKeyRef.current = crypto.randomUUID();
+      idempotencyKeyRef.current = nuevaClave();
       setLineas([nuevaLinea()]);
       setNumero("");
-      await cargar();
+      await cargar(empresaOperacion);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo confirmar la compra");
+      if (empresaActivaRef.current === empresaOperacion) {
+        setError(err instanceof Error ? err.message : "No se pudo confirmar la compra");
+      }
     } finally {
-      setSaving(false);
+      if (empresaActivaRef.current === empresaOperacion) setSaving(false);
     }
   }
 
