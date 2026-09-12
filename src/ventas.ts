@@ -5,6 +5,7 @@ export type MedioPagoSigo =
   | "debito"
   | "credito"
   | "transferencia"
+  | "mercado_pago"
   | "cuenta_corriente"
   | "otro";
 
@@ -30,6 +31,7 @@ const MEDIOS_PAGO_VALIDOS: MedioPagoSigo[] = [
   "debito",
   "credito",
   "transferencia",
+  "mercado_pago",
   "cuenta_corriente",
   "otro",
 ];
