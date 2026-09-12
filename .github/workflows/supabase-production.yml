@@ -20,6 +20,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SIGO_PRODUCTION_URL: https://comercial-lilac.vercel.app/
 
     steps:
       - name: Checkout
@@ -48,6 +49,55 @@ jobs:
 
       - name: Link production project
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Ensure SIGO auth redirect
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/config/auth"
+          current="$(curl -fsS "$endpoint" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}")"
+
+          current_allow="$(printf '%s' "$current" | jq -r '.uri_allow_list // ""')"
+          desired_root="${SIGO_PRODUCTION_URL}"
+          desired_wildcard="${SIGO_PRODUCTION_URL}**"
+
+          merged_allow="$(python3 - "$current_allow" "$desired_root" "$desired_wildcard" <<'PY'
+import sys
+items = []
+for raw in sys.argv[1:]:
+    for item in raw.split(','):
+        item = item.strip()
+        if item and item not in items:
+            items.append(item)
+print(','.join(items))
+PY
+)"
+
+          payload="$(jq -n \
+            --arg site "$SIGO_PRODUCTION_URL" \
+            --arg allow "$merged_allow" \
+            '{site_url: $site, uri_allow_list: $allow}')"
+
+          curl -fsS -X PATCH "$endpoint" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$payload" >/dev/null
+
+          verified="$(curl -fsS "$endpoint" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}")"
+          verified_site="$(printf '%s' "$verified" | jq -r '.site_url // ""')"
+          verified_allow="$(printf '%s' "$verified" | jq -r '.uri_allow_list // ""')"
+
+          if [ "$verified_site" != "$SIGO_PRODUCTION_URL" ]; then
+            echo "::error title=Auth redirect mismatch::Supabase site_url was not updated to SIGO production."
+            exit 1
+          fi
+          if ! printf '%s' "$verified_allow" | grep -Fq "$desired_root"; then
+            echo "::error title=Auth redirect missing::SIGO production URL is not in Supabase redirect allow-list."
+            exit 1
+          fi
+          echo "SIGO production auth redirect verified."
 
       - name: Normalize legacy migration history
         shell: bash
