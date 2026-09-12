@@ -32,6 +32,19 @@ function crearIdempotencyKey() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function consolidarItemsVenta(items: VentaItemSigoInput[]): VentaItemSigoInput[] {
+  const cantidades = new Map<string, number>();
+  for (const item of items) {
+    const productoId = item.productoId.trim();
+    if (!productoId || !Number.isFinite(item.cantidad) || item.cantidad <= 0) {
+      throw new Error("Hay un producto con cantidad inválida en el carrito.");
+    }
+    cantidades.set(productoId, (cantidades.get(productoId) ?? 0) + item.cantidad);
+  }
+
+  return Array.from(cantidades, ([productoId, cantidad]) => ({ productoId, cantidad }));
+}
+
 function mensajeVenta(error: unknown): string {
   const raw = error instanceof Error
     ? error.message
@@ -135,14 +148,12 @@ export async function confirmarVentaSigo(input: {
   if (input.medioPago === "cuenta_corriente" && !input.clienteId) {
     throw new Error("Cuenta corriente requiere seleccionar un cliente.");
   }
-  if (input.items.some((item) => !item.productoId || !Number.isFinite(item.cantidad) || item.cantidad <= 0)) {
-    throw new Error("Hay un producto con cantidad inválida en el carrito.");
-  }
 
+  const itemsConsolidados = consolidarItemsVenta(input.items);
   const idempotencyKey = input.idempotencyKey ?? crearIdempotencyKey();
   const { data, error } = await supabase.rpc("confirmar_venta_sigo_v2", {
     p_empresa_id: input.empresaId,
-    p_items: input.items.map((item) => ({
+    p_items: itemsConsolidados.map((item) => ({
       producto_id: item.productoId,
       cantidad: item.cantidad,
     })),
