@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import BarcodeScanner from "./BarcodeScanner";
 import type { BarcodeProduct } from "./barcode";
 import { listarClientesSigo, type ClienteSigo } from "./clientes";
@@ -41,12 +41,15 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
   const [exito, setExito] = useState("");
   const [advertencia, setAdvertencia] = useState("");
   const [idempotencyKey, setIdempotencyKey] = useState(nuevaClaveVenta);
+  const empresaActivaRef = useRef(empresaId);
 
-  async function cargarVentasRecientes() {
+  async function cargarVentasRecientes(targetEmpresaId = empresaId) {
     setVentasError("");
     try {
-      setVentasRecientes(await listarVentasRecientesSigo(empresaId, 8));
+      const data = await listarVentasRecientesSigo(targetEmpresaId, 8);
+      if (empresaActivaRef.current === targetEmpresaId) setVentasRecientes(data);
     } catch (err) {
+      if (empresaActivaRef.current !== targetEmpresaId) return;
       setVentasRecientes([]);
       setVentasError(err instanceof Error ? err.message : "No se pudieron verificar las ventas recientes.");
     }
@@ -54,18 +57,30 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
 
   useEffect(() => {
     let cancelled = false;
+    empresaActivaRef.current = empresaId;
+    setItems([]);
+    setMedioPago("efectivo");
+    setClientes([]);
+    setClienteId("");
+    setClientesError("");
+    setVentasRecientes([]);
+    setVentasError("");
+    setError("");
+    setExito("");
+    setAdvertencia("");
+    setIdempotencyKey(nuevaClaveVenta());
+
     async function cargar() {
-      setClientesError("");
       try {
         const data = await listarClientesSigo(empresaId);
-        if (!cancelled) setClientes(data);
+        if (!cancelled && empresaActivaRef.current === empresaId) setClientes(data);
       } catch (err) {
-        if (!cancelled) {
+        if (!cancelled && empresaActivaRef.current === empresaId) {
           setClientes([]);
           setClientesError(err instanceof Error ? err.message : "No se pudieron cargar los clientes.");
         }
       }
-      if (!cancelled) await cargarVentasRecientes();
+      if (!cancelled && empresaActivaRef.current === empresaId) await cargarVentasRecientes(empresaId);
     }
     void cargar();
     return () => { cancelled = true; };
@@ -147,18 +162,20 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
 
   async function confirmar() {
     if (!puedeConfirmar || confirmando) return;
+    const empresaConfirmacion = empresaId;
     setConfirmando(true);
     setError("");
     setExito("");
     setAdvertencia("");
     try {
       const resultado = await confirmarVentaSigo({
-        empresaId,
+        empresaId: empresaConfirmacion,
         medioPago,
         clienteId: clienteId || null,
         idempotencyKey,
         items: items.map((item) => ({ productoId: item.producto.id, cantidad: item.cantidad })),
       });
+      if (empresaActivaRef.current !== empresaConfirmacion) return;
       setExito(`Venta confirmada · ${resultado.ventaId.slice(0, 8).toUpperCase()} · Total $ ${total.toLocaleString("es-AR")}`);
       if (resultado.integridad !== "ok") {
         setAdvertencia(
@@ -171,12 +188,14 @@ export default function VentaRapidaOperativa({ empresaId }: { empresaId: string 
       setClienteId("");
       setMedioPago("efectivo");
       setIdempotencyKey(nuevaClaveVenta());
-      const [data] = await Promise.all([listarClientesSigo(empresaId), cargarVentasRecientes()]);
-      setClientes(data);
+      const [data] = await Promise.all([listarClientesSigo(empresaConfirmacion), cargarVentasRecientes(empresaConfirmacion)]);
+      if (empresaActivaRef.current === empresaConfirmacion) setClientes(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo confirmar la venta.");
+      if (empresaActivaRef.current === empresaConfirmacion) {
+        setError(err instanceof Error ? err.message : "No se pudo confirmar la venta.");
+      }
     } finally {
-      setConfirmando(false);
+      if (empresaActivaRef.current === empresaConfirmacion) setConfirmando(false);
     }
   }
 
