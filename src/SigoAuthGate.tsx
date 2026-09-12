@@ -8,6 +8,7 @@ type Props = { children: ReactNode };
 type AuthMode = "login" | "register" | "recovery";
 
 const SIGO_PRODUCTION_URL = "https://comercial-lilac.vercel.app/";
+const PENDING_EMPRESA_METADATA_KEY = "sigo_empresa_nombre";
 
 function esLimiteTemporal(errorMessage: string) {
   const normalized = errorMessage.toLowerCase();
@@ -16,8 +17,10 @@ function esLimiteTemporal(errorMessage: string) {
 
 function mensajeAcceso(errorMessage: string) {
   const normalized = errorMessage.toLowerCase();
+  if (normalized.includes("invalid login credentials")) return "Email o contraseña incorrectos.";
   if (normalized.includes("email not confirmed")) return "Tu cuenta necesita activación. Podés reenviar el correo desde acá.";
   if (normalized.includes("already registered") || normalized.includes("user already registered")) return "Ese email ya tiene una cuenta. Ingresá o usá Recuperar acceso.";
+  if (normalized.includes("expired") && (normalized.includes("link") || normalized.includes("token"))) return "El enlace venció. Solicitá uno nuevo desde Recuperar acceso.";
   if (esLimiteTemporal(errorMessage)) return "El servicio de correo está temporalmente ocupado. Probá nuevamente en un minuto.";
   if (normalized.includes("banned") || normalized.includes("disabled")) return "Tu acceso está deshabilitado. Contactá al administrador de tu empresa.";
   if (normalized.includes("network") || normalized.includes("fetch")) return "No pudimos conectarnos. Revisá tu conexión a internet e intentá otra vez.";
@@ -132,7 +135,10 @@ export default function SigoAuthGate({ children }: Props) {
     const { data, error: signUpError } = await supabase.auth.signUp({
       email: normalizedEmail,
       password,
-      options: { emailRedirectTo: SIGO_PRODUCTION_URL },
+      options: {
+        emailRedirectTo: SIGO_PRODUCTION_URL,
+        data: { [PENDING_EMPRESA_METADATA_KEY]: nombre },
+      },
     });
 
     if (signUpError) {
@@ -151,7 +157,7 @@ export default function SigoAuthGate({ children }: Props) {
     if (!data.session) {
       terminarSolicitud();
       setEmail(normalizedEmail);
-      setSuccess("Cuenta creada. Te enviamos un correo para activarla.");
+      setSuccess("Cuenta creada. Te enviamos un correo para activarla. Al ingresar terminaremos automáticamente el alta de tu empresa.");
       setPuedeReenviarActivacion(true);
       setMode("login");
       return;
@@ -162,10 +168,17 @@ export default function SigoAuthGate({ children }: Props) {
       p_razon_social: null,
       p_cuit: null,
     });
+
+    if (!empresaError) {
+      const { error: metadataError } = await supabase.auth.updateUser({
+        data: { [PENDING_EMPRESA_METADATA_KEY]: null },
+      });
+      if (metadataError) console.warn("No se pudo limpiar el alta pendiente de empresa", metadataError);
+    }
     terminarSolicitud();
 
     if (empresaError) {
-      setError("La cuenta se creó, pero no pudimos terminar el alta de la empresa. Volvé a intentar en unos minutos.");
+      setError("La cuenta se creó, pero no pudimos terminar el alta de la empresa. SIGO va a reintentar automáticamente cuando ingreses.");
       setSession(data.session);
       return;
     }
