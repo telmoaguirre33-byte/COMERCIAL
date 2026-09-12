@@ -4,8 +4,13 @@ import path from 'node:path';
 const checks = [
   {
     file: 'src/SigoAuthGate.tsx',
-    required: ['signInWithPassword', 'signUp', 'resetPasswordForEmail', 'Crear cuenta y empresa', 'Ingresar a SIGO'],
-    label: 'auth login/register/recovery',
+    required: ['signInWithPassword', 'signUp', 'resetPasswordForEmail', 'Crear cuenta y empresa', 'Ingresar a SIGO', 'PENDING_EMPRESA_METADATA_KEY', 'sigo_empresa_nombre', 'Email o contraseña incorrectos.'],
+    label: 'auth login/register/recovery with activation-safe company onboarding',
+  },
+  {
+    file: 'src/SigoRoot.tsx',
+    required: ['autoProvisionAttemptedRef', 'sigo_empresa_nombre', 'crearEmpresaSigo(nombrePendiente)', 'cargarMisEmpresas()', 'no vuelvas a crearla', 'setTenantRetryKey'],
+    label: 'post-activation company provisioning without duplicate manual creation',
   },
   {
     file: 'src/tenant.ts',
@@ -52,8 +57,13 @@ const checks = [
   },
   {
     file: 'src/ventas.ts',
-    required: ['confirmar_venta_sigo_v2', 'consolidarItemsVenta', 'MEDIOS_PAGO_VALIDOS', 'idempotencyKey', 'INSUFFICIENT_STOCK', 'normalizarIdentificador', 'Number.isFinite(total)', 'p_empresa_id: empresaId', 'p_cliente_id: clienteId'],
-    label: 'transactional sale, normalized tenant/client identity and safe totals',
+    required: ['confirmar_venta_sigo_v2', 'consolidarItemsVenta', 'MEDIOS_PAGO_VALIDOS', '"mercado_pago"', 'idempotencyKey', 'INSUFFICIENT_STOCK', 'normalizarIdentificador', 'Number.isFinite(total)', 'p_empresa_id: empresaId', 'p_cliente_id: clienteId'],
+    label: 'transactional sale, normalized tenant/client identity, Mercado Pago and safe totals',
+  },
+  {
+    file: 'src/VentaRapidaOperativa.tsx',
+    required: ['value="mercado_pago"', 'Mercado Pago', 'BarcodeScanner', 'Confirmar venta'],
+    label: 'quick sale exposes scanner and Mercado Pago checkout',
   },
   {
     file: 'src/compras.ts',
@@ -96,6 +106,12 @@ const checks = [
     required: ['IDEMPOTENCY_KEY_REQUIRED', 'IDEMPOTENCY_CONFLICT', 'DUPLICATE_PRODUCT_ITEM', 'STOCK_WRITE_REQUIRED', 'v_producto_id = any(v_seen)', 'p_empresa_id'],
     forbidden: ['delete from public.compras_sigo', 'truncate'],
     label: 'purchase retry/stock hardening without destructive history changes',
+  },
+  {
+    file: 'supabase/migrations/20260912131700_mercado_pago_ventas.sql',
+    required: ['ventas_sigo_medio_pago_check', "'mercado_pago'", 'confirmar_venta_sigo_v2', 'caja_movimientos_sigo'],
+    forbidden: ['delete from public.ventas_sigo', 'truncate'],
+    label: 'Mercado Pago enabled in sales without destructive history changes',
   },
   {
     file: 'supabase/migrations/20260910110800_mis_empresas_operativas.sql',
