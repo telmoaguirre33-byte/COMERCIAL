@@ -49,6 +49,19 @@ jobs:
       - name: Link production project
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
 
+      - name: Normalize legacy migration history
+        shell: bash
+        run: |
+          state="$(supabase migration list --linked)"
+          echo "$state"
+          if echo "$state" | grep -q '20260912081420'; then
+            echo "Legacy migration 20260912081420 duplicates local 20260909191300_multiempresa_base; repairing history only."
+            supabase migration repair --status reverted 20260912081420
+            supabase migration repair --status applied 20260909191300
+          else
+            echo "Legacy migration history already normalized."
+          fi
+
       - name: Show pending migrations
         run: supabase migration list --linked
 
