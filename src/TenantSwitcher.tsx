@@ -22,6 +22,7 @@ export default function TenantSwitcher({ value, onChange, onStateChange, disable
   const [empresas, setEmpresas] = useState<EmpresaOperativa[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -29,10 +30,17 @@ export default function TenantSwitcher({ value, onChange, onStateChange, disable
     onStateChange?.("loading");
 
     try {
-      const disponibles = await cargarMisEmpresas();
+      const [{ data: authData, error: authError }, disponibles] = await Promise.all([
+        supabase.auth.getUser(),
+        cargarMisEmpresas(),
+      ]);
+      if (authError) throw authError;
+      const currentUserId = authData.user?.id ?? null;
+      setUserId(currentUserId);
+
       setEmpresas(disponibles);
-      const preferida = value ?? leerEmpresaActivaGuardada();
-      const activa = resolverEmpresaActiva(disponibles, preferida);
+      const preferida = value ?? leerEmpresaActivaGuardada(currentUserId);
+      const activa = resolverEmpresaActiva(disponibles, preferida, currentUserId);
       onChange(activa);
       onStateChange?.(disponibles.length ? "ready" : "empty");
     } catch (e) {
@@ -65,12 +73,12 @@ export default function TenantSwitcher({ value, onChange, onStateChange, disable
 
   function selectEmpresa(empresaId: string) {
     const empresa = empresas.find((item) => item.empresa_id === empresaId) ?? null;
-    guardarEmpresaActiva(empresa?.empresa_id ?? null);
+    guardarEmpresaActiva(empresa?.empresa_id ?? null, userId);
     onChange(empresa);
   }
 
   async function cerrarSesion() {
-    guardarEmpresaActiva(null);
+    guardarEmpresaActiva(null, userId);
     await supabase.auth.signOut();
   }
 
