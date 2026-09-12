@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import {
   cargarMisEmpresas,
@@ -23,39 +23,46 @@ export default function TenantSwitcher({ value, onChange, onStateChange, disable
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const requestRef = useRef(0);
 
   const load = useCallback(async () => {
+    const requestId = ++requestRef.current;
     setLoading(true);
     setError(false);
     onStateChange?.("loading");
 
     try {
-      const [{ data: authData, error: authError }, disponibles] = await Promise.all([
-        supabase.auth.getUser(),
-        cargarMisEmpresas(),
-      ]);
+      const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError) throw authError;
       const currentUserId = authData.user?.id ?? null;
-      setUserId(currentUserId);
+      if (!currentUserId) throw new Error("Sesión no disponible para cargar empresas.");
 
+      const disponibles = await cargarMisEmpresas();
+      if (requestRef.current !== requestId) return;
+
+      setUserId(currentUserId);
       setEmpresas(disponibles);
       const preferida = value ?? leerEmpresaActivaGuardada(currentUserId);
       const activa = resolverEmpresaActiva(disponibles, preferida, currentUserId);
       onChange(activa);
       onStateChange?.(disponibles.length ? "ready" : "empty");
     } catch (e) {
+      if (requestRef.current !== requestId) return;
       console.error(e);
       setEmpresas([]);
       setError(true);
       onChange(null);
       onStateChange?.("error");
     } finally {
-      setLoading(false);
+      if (requestRef.current === requestId) setLoading(false);
     }
   }, [onChange, onStateChange, value]);
 
   useEffect(() => {
     void load();
+    return () => {
+      requestRef.current += 1;
+    };
   }, [load]);
 
   useEffect(() => {
@@ -78,6 +85,7 @@ export default function TenantSwitcher({ value, onChange, onStateChange, disable
   }
 
   async function cerrarSesion() {
+    requestRef.current += 1;
     guardarEmpresaActiva(null, userId);
     await supabase.auth.signOut();
   }
