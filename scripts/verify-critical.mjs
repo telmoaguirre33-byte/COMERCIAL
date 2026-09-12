@@ -13,8 +13,8 @@ const checks = [
   },
   {
     file: 'src/BarcodeScanner.tsx',
-    required: ['getUserMedia', 'onDetected'],
-    label: 'mobile camera barcode scanner',
+    required: ['getUserMedia', 'BarcodeDetector', 'onProduct', 'ScanSource = "manual" | "wedge" | "camera"'],
+    label: 'manual/wedge/mobile-camera barcode scanner',
   },
   {
     file: 'src/barcode.ts',
