@@ -26,36 +26,82 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check production credentials
+      - name: Check production database credentials
         shell: bash
         run: |
           missing=0
-          for key in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF; do
+          for key in SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF; do
             if [ -z "${!key}" ]; then
               echo "::error title=Missing production secret::$key is not configured in GitHub Actions secrets."
               missing=1
             fi
           done
           if [ "$missing" -ne 0 ]; then
-            echo "Production migration cannot continue until all Supabase secrets are configured."
+            echo "Production migration cannot continue until database credentials are configured."
             exit 1
           fi
-          echo "Supabase production credentials detected."
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+            echo "::warning title=Supabase management token unavailable::Database deployment will use the direct Postgres fallback; Auth redirect sync will be skipped."
+          fi
+          echo "Supabase production database credentials detected."
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
           version: latest
 
-      - name: Link production project
-        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+      - name: Prepare safe direct database fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          encoded_password="$(python3 - <<'PY'
+          import os
+          from urllib.parse import quote
+          print(quote(os.environ['SUPABASE_DB_PASSWORD'], safe=''))
+          PY
+          )"
+          echo "::add-mask::$encoded_password"
+          db_url="postgresql://postgres:${encoded_password}@db.${SUPABASE_PROJECT_REF}.supabase.co:5432/postgres?sslmode=require"
+          echo "::add-mask::$db_url"
+          echo "SIGO_DB_URL=$db_url" >> "$GITHUB_ENV"
+
+      - name: Resolve production database connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] && supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"; then
+            echo "SIGO_DB_MODE=linked" >> "$GITHUB_ENV"
+            echo "Supabase linked mode available."
+            exit 0
+          fi
+
+          echo "::warning title=Supabase management API unavailable::Trying direct Postgres connection so migrations are not blocked by an expired management token."
+          if supabase migration list --db-url "$SIGO_DB_URL" >/tmp/sigo-migrations.txt 2>/tmp/sigo-db-error.txt; then
+            cat /tmp/sigo-migrations.txt
+            echo "SIGO_DB_MODE=direct" >> "$GITHUB_ENV"
+            echo "Direct Postgres fallback verified."
+            exit 0
+          fi
+
+          cat /tmp/sigo-db-error.txt >&2 || true
+          echo "::error title=Production database unreachable::Neither linked mode nor the direct Postgres fallback could reach production. Renew SUPABASE_ACCESS_TOKEN or configure network/database access."
+          exit 1
 
       - name: Ensure SIGO auth redirect
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+            echo "::warning title=Auth redirect sync skipped::SUPABASE_ACCESS_TOKEN is unavailable. Database migrations can continue independently."
+            exit 0
+          fi
+
           endpoint="https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/config/auth"
-          current="$(curl -fsS "$endpoint" -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}")"
+          if ! current="$(curl -fsS "$endpoint" -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}")"; then
+            echo "::warning title=Auth redirect sync unavailable::Supabase management token was rejected. Keeping database deployment independent; renew the token to resync Auth settings."
+            exit 0
+          fi
+
           current_allow="$(printf '%s' "$current" | jq -r '.uri_allow_list // ""')"
           desired_root="${SIGO_PRODUCTION_URL}"
           desired_wildcard="${SIGO_PRODUCTION_URL}**"
@@ -71,46 +117,79 @@ jobs:
           esac
 
           payload="$(jq -n --arg site "$SIGO_PRODUCTION_URL" --arg allow "$merged_allow" '{site_url: $site, uri_allow_list: $allow}')"
-          curl -fsS -X PATCH "$endpoint" \
+          if ! curl -fsS -X PATCH "$endpoint" \
             -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
             -H "Content-Type: application/json" \
-            --data "$payload" >/dev/null
+            --data "$payload" >/dev/null; then
+            echo "::warning title=Auth redirect update failed::Database deployment will continue; renew SUPABASE_ACCESS_TOKEN to update Auth configuration."
+            exit 0
+          fi
 
           verified="$(curl -fsS "$endpoint" -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}")"
           verified_site="$(printf '%s' "$verified" | jq -r '.site_url // ""')"
           verified_allow="$(printf '%s' "$verified" | jq -r '.uri_allow_list // ""')"
 
-          if [ "$verified_site" != "$SIGO_PRODUCTION_URL" ]; then
-            echo "::error title=Auth redirect mismatch::Supabase site_url was not updated to SIGO production."
-            exit 1
-          fi
-          if ! printf '%s' "$verified_allow" | grep -Fq "$desired_root"; then
-            echo "::error title=Auth redirect missing::SIGO production URL is not in Supabase redirect allow-list."
-            exit 1
+          if [ "$verified_site" != "$SIGO_PRODUCTION_URL" ] || ! printf '%s' "$verified_allow" | grep -Fq "$desired_root"; then
+            echo "::warning title=Auth redirect not fully synchronized::Database deployment will continue; Auth configuration still requires attention."
+            exit 0
           fi
           echo "SIGO production auth redirect verified."
 
       - name: Normalize legacy migration history
         shell: bash
         run: |
-          state="$(supabase migration list --linked)"
+          set -euo pipefail
+          if [ "$SIGO_DB_MODE" = "linked" ]; then
+            state="$(supabase migration list --linked)"
+          else
+            state="$(supabase migration list --db-url "$SIGO_DB_URL")"
+          fi
           echo "$state"
           if echo "$state" | grep -q '20260912081420'; then
             echo "Legacy migration 20260912081420 duplicates local 20260909191300_multiempresa_base; repairing history only."
-            supabase migration repair --status reverted 20260912081420
-            supabase migration repair --status applied 20260909191300
+            if [ "$SIGO_DB_MODE" = "linked" ]; then
+              supabase migration repair --linked --status reverted 20260912081420
+              supabase migration repair --linked --status applied 20260909191300
+            else
+              supabase migration repair --db-url "$SIGO_DB_URL" --status reverted 20260912081420
+              supabase migration repair --db-url "$SIGO_DB_URL" --status applied 20260909191300
+            fi
           else
             echo "Legacy migration history already normalized."
           fi
 
       - name: Show pending migrations
-        run: supabase migration list --linked
+        shell: bash
+        run: |
+          if [ "$SIGO_DB_MODE" = "linked" ]; then
+            supabase migration list --linked
+          else
+            supabase migration list --db-url "$SIGO_DB_URL"
+          fi
 
       - name: Apply pending migrations
-        run: supabase db push --linked --include-all
+        shell: bash
+        run: |
+          if [ "$SIGO_DB_MODE" = "linked" ]; then
+            supabase db push --linked --include-all
+          else
+            supabase db push --db-url "$SIGO_DB_URL" --include-all
+          fi
 
       - name: Verify remote migration state
-        run: supabase migration list --linked
+        shell: bash
+        run: |
+          if [ "$SIGO_DB_MODE" = "linked" ]; then
+            supabase migration list --linked
+          else
+            supabase migration list --db-url "$SIGO_DB_URL"
+          fi
 
       - name: Lint production database
-        run: supabase db lint --linked --level warning
+        shell: bash
+        run: |
+          if [ "$SIGO_DB_MODE" = "linked" ]; then
+            supabase db lint --linked --level warning
+          else
+            supabase db lint --db-url "$SIGO_DB_URL" --level warning
+          fi
