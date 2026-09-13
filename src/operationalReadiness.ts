@@ -44,6 +44,7 @@ export type OperationalReadinessResult = {
   catalogoLeido: number;
   costosActualesNull: number;
   identidadesDuplicadas: number;
+  legacyDupPendientes: number;
   productosSinCodigo: number;
   stockNegativo: number;
   vendiblesConStock: number;
@@ -57,6 +58,7 @@ const COMPUTACION_PATTERN = "resguardo-stock-sigo-2026-09-09-sertec-%";
 const LIBRERIA_LOTES_ESPERADOS = 10;
 const COMPUTACION_LOTES_ESPERADOS = 5;
 const PAGE_SIZE = 1000;
+const LEGACY_DUP_PREFIX = "LEGACY-DUP-";
 
 function sumar(rows: ImportRow[], key: "source_rows" | "verified_rows") {
   return rows.reduce((total, row) => total + Number(row[key] ?? 0), 0);
@@ -128,6 +130,7 @@ function resultadoVacio(
     catalogoLeido: 0,
     costosActualesNull: 0,
     identidadesDuplicadas: 0,
+    legacyDupPendientes: 0,
     productosSinCodigo: 0,
     stockNegativo: 0,
     vendiblesConStock: 0,
@@ -198,6 +201,9 @@ export async function validarReadinessSigoAdministracion(
     return inserted + skipped !== source || verified !== source;
   }).length;
   const identidadesDuplicadas = contarIdentidadesDuplicadas(catalogo);
+  const legacyDupPendientes = catalogo.filter(
+    (row) => normalizarCodigo(row.codigo_interno).startsWith(LEGACY_DUP_PREFIX),
+  ).length;
   const productosSinCodigo = catalogo.filter(
     (row) => !normalizarCodigo(row.codigo_barras) && !normalizarCodigo(row.codigo_interno),
   ).length;
@@ -206,7 +212,8 @@ export async function validarReadinessSigoAdministracion(
     row.activo !== false
     && Number(row.precio_venta ?? 0) > 0
     && Number(row.stock_actual ?? 0) > 0
-    && Boolean(normalizarCodigo(row.codigo_barras) || normalizarCodigo(row.codigo_interno)),
+    && Boolean(normalizarCodigo(row.codigo_barras) || normalizarCodigo(row.codigo_interno))
+    && !normalizarCodigo(row.codigo_interno).startsWith(LEGACY_DUP_PREFIX),
   ).length;
 
   if (libreria.length !== LIBRERIA_LOTES_ESPERADOS) {
@@ -242,6 +249,9 @@ export async function validarReadinessSigoAdministracion(
   if (identidadesDuplicadas !== 0) {
     issues.push(`Hay ${identidadesDuplicadas} códigos repetidos entre productos; el scanner sería ambiguo.`);
   }
+  if (legacyDupPendientes !== 0) {
+    issues.push(`Hay ${legacyDupPendientes} producto(s) LEGACY-DUP pendiente(s) de revisar contra el código físico antes del go-live.`);
+  }
   if (productosSinCodigo !== 0) {
     issues.push(`Hay ${productosSinCodigo} productos sin código interno ni código de barras.`);
   }
@@ -249,7 +259,7 @@ export async function validarReadinessSigoAdministracion(
     issues.push(`Hay ${stockNegativo} productos con stock negativo.`);
   }
   if (vendiblesConStock === 0) {
-    issues.push("No hay productos activos con código, precio mayor a cero y stock positivo para una venta de prueba.");
+    issues.push("No hay productos activos con código final, precio mayor a cero y stock positivo para una venta de prueba.");
   }
 
   const ok = issues.length === 0;
@@ -267,6 +277,7 @@ export async function validarReadinessSigoAdministracion(
     `catalog_loaded=${catalogoLeido}`,
     `costo_actual_null=${costosActualesNull}`,
     `duplicate_codes=${identidadesDuplicadas}`,
+    `legacy_dup_pending=${legacyDupPendientes}`,
     `products_without_code=${productosSinCodigo}`,
     `negative_stock=${stockNegativo}`,
     `sellable_with_stock=${vendiblesConStock}`,
@@ -294,6 +305,7 @@ export async function validarReadinessSigoAdministracion(
     catalogoLeido,
     costosActualesNull,
     identidadesDuplicadas,
+    legacyDupPendientes,
     productosSinCodigo,
     stockNegativo,
     vendiblesConStock,
