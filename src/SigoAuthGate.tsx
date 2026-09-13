@@ -5,13 +5,14 @@ import { supabase } from "./supabase";
 import "./auth.css";
 
 type Props = { children: ReactNode };
-type AuthMode = "login" | "register" | "register_member" | "recovery";
+type AuthMode = "login" | "register" | "register_member" | "subscription" | "recovery";
 
 const SIGO_PRODUCTION_URL = "https://comercial-lilac.vercel.app/";
 const PENDING_EMPRESA_METADATA_KEY = "sigo_empresa_nombre";
 const ONBOARDING_MODE_METADATA_KEY = "sigo_onboarding_mode";
 const OWNER_ONBOARDING_MODE = "owner";
 const STAFF_ONBOARDING_MODE = "member";
+const MERCADOPAGO_SUBSCRIPTION_URL = String(import.meta.env.VITE_MERCADOPAGO_SUBSCRIPTION_URL ?? "").trim();
 
 function esLimiteTemporal(errorMessage: string) {
   const normalized = errorMessage.toLowerCase();
@@ -94,6 +95,15 @@ export default function SigoAuthGate({ children }: Props) {
     setSubmitting(false);
   }
 
+  function abrirMercadoPago() {
+    limpiarMensajes();
+    if (!MERCADOPAGO_SUBSCRIPTION_URL) {
+      setError("Mercado Pago está preparado en SIGO, pero todavía falta vincular el plan de suscripción de producción.");
+      return;
+    }
+    window.location.assign(MERCADOPAGO_SUBSCRIPTION_URL);
+  }
+
   async function iniciarSesion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!comenzarSolicitud()) return;
@@ -143,6 +153,8 @@ export default function SigoAuthGate({ children }: Props) {
         data: {
           [PENDING_EMPRESA_METADATA_KEY]: nombre,
           [ONBOARDING_MODE_METADATA_KEY]: OWNER_ONBOARDING_MODE,
+          sigo_trial_days: 7,
+          sigo_trial_started_at: new Date().toISOString(),
         },
       },
     });
@@ -163,7 +175,7 @@ export default function SigoAuthGate({ children }: Props) {
     if (!data.session) {
       terminarSolicitud();
       setEmail(normalizedEmail);
-      setSuccess("Cuenta creada. Te enviamos un correo para activarla. Al ingresar terminaremos automáticamente el alta de tu empresa.");
+      setSuccess("Cuenta creada. Te enviamos un correo para activarla. Tu prueba gratis de 7 días queda asociada al alta de la empresa.");
       setPuedeReenviarActivacion(true);
       setMode("login");
       return;
@@ -189,7 +201,7 @@ export default function SigoAuthGate({ children }: Props) {
       return;
     }
 
-    setSuccess("Cuenta y empresa creadas correctamente. Entrando a SIGO…");
+    setSuccess("Cuenta y empresa creadas correctamente. Tu prueba gratis de 7 días ya comenzó.");
     setSession(data.session);
   }
 
@@ -339,6 +351,21 @@ export default function SigoAuthGate({ children }: Props) {
               <button className="sigo-auth-submit" type="submit" disabled={submitting}>{submitting ? "Guardando…" : "Guardar contraseña"}</button>
             </form>
           </>
+        ) : mode === "subscription" ? (
+          <>
+            <h1 id="sigo-login-title">Suscripción</h1>
+            <p className="sigo-auth-subtitle">Elegí el medio de pago para activar o renovar SIGO. El cobro recurrente se gestiona de forma segura fuera de la app.</p>
+            <div className="sigo-subscription-card">
+              <div className="sigo-subscription-provider">
+                <span className="sigo-subscription-logo" aria-hidden="true">MP</span>
+                <div><strong>Mercado Pago</strong><small>Suscripción mensual · pago seguro</small></div>
+              </div>
+              {error ? <div className="sigo-auth-error" role="alert">{error}</div> : null}
+              <button className="sigo-auth-submit sigo-mercadopago-button" type="button" onClick={abrirMercadoPago}>Continuar con Mercado Pago</button>
+              <p className="sigo-subscription-note">SIGO no guarda datos de tarjeta. Mercado Pago procesa el medio de pago y los cobros recurrentes.</p>
+            </div>
+            <button className="sigo-auth-secondary" type="button" onClick={() => cambiarModo("login")}>Volver al ingreso</button>
+          </>
         ) : mode === "register_member" ? (
           <>
             <h1 id="sigo-login-title">Crear cuenta de usuario</h1>
@@ -354,15 +381,16 @@ export default function SigoAuthGate({ children }: Props) {
           </>
         ) : mode === "register" ? (
           <>
-            <h1 id="sigo-login-title">Crear cuenta</h1>
-            <p className="sigo-auth-subtitle">Creá tu empresa y quedá como administrador principal.</p>
+            <h1 id="sigo-login-title">Prueba gratis 7 días</h1>
+            <p className="sigo-auth-subtitle">Creá tu empresa, quedá como administrador principal y probá SIGO durante 7 días sin pagar para empezar.</p>
             <form onSubmit={registrarme} className="sigo-auth-form">
               <label className="sigo-auth-field"><span>Empresa o negocio</span><input value={empresaNombre} onChange={(e) => setEmpresaNombre(e.target.value)} autoComplete="organization" required /></label>
               <label className="sigo-auth-field"><span>Email</span><input type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false} value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
               {campoPassword(password, setPassword, "new-password")}
               {error ? <div className="sigo-auth-error" role="alert">{error}</div> : null}
               {success ? <div className="sigo-auth-success" role="status">{success}</div> : null}
-              <button className="sigo-auth-submit" type="submit" disabled={submitting}>{submitting ? "Creando cuenta…" : "Crear cuenta y empresa"}</button>
+              <button className="sigo-auth-submit" type="submit" disabled={submitting}>{submitting ? "Creando cuenta…" : "Comenzar prueba gratis 7 días"}</button>
+              <button className="sigo-auth-secondary" type="button" onClick={() => cambiarModo("subscription")}>Suscripción</button>
               <button className="sigo-auth-secondary" type="button" onClick={() => cambiarModo("register_member")}>Me voy a sumar a una empresa</button>
               <button className="sigo-auth-secondary" type="button" onClick={() => cambiarModo("login")}>Ya tengo cuenta</button>
             </form>
@@ -378,7 +406,8 @@ export default function SigoAuthGate({ children }: Props) {
               {success ? <div className="sigo-auth-success" role="status">{success}</div> : null}
               <button className="sigo-auth-submit" type="submit" disabled={submitting}>{submitting ? "Ingresando…" : "Ingresar a SIGO"}</button>
               {puedeReenviarActivacion ? <button className="sigo-auth-secondary" type="button" disabled={submitting} onClick={() => void reenviarActivacion()}>Reenviar activación</button> : null}
-              <button className="sigo-auth-secondary" type="button" disabled={submitting} onClick={() => cambiarModo("register")}>Crear mi empresa</button>
+              <button className="sigo-auth-trial" type="button" disabled={submitting} onClick={() => cambiarModo("register")}>Probar gratis 7 días</button>
+              <button className="sigo-auth-subscription" type="button" disabled={submitting} onClick={() => cambiarModo("subscription")}>Suscripción</button>
               <button className="sigo-auth-secondary" type="button" disabled={submitting} onClick={() => cambiarModo("register_member")}>Crear cuenta de usuario</button>
               <button className="sigo-auth-secondary" type="button" disabled={submitting} onClick={() => void recuperarAcceso()}>Recuperar acceso</button>
             </form>
