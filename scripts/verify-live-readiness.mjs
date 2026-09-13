@@ -19,13 +19,24 @@ for (const [needle, label] of [
   ['productos', 'live catalog query'],
   ['LIBRERIA_PATTERN', 'Libreria import selector'],
   ['COMPUTACION_PATTERN', 'Computacion import selector'],
+  ['LIBRERIA_LOTES_ESPERADOS = 10', '10 Libreria batches'],
+  ['COMPUTACION_LOTES_ESPERADOS = 5', '5 Computacion batches'],
   ['libreriaSource !== 983', '983 Libreria check'],
   ['computacionSource !== 417', '417 Computacion check'],
   ['totalSource !== 1400', '1,400 total check'],
+  ['inserted + skipped !== source', 'per-batch idempotency check'],
+  ['verified !== source', 'per-batch verification check'],
   ['catalogoProductos < 1400', 'live catalog count check'],
+  ['catalogoLeido !== catalogoProductos', 'full paged catalog check'],
   ['costosActualesNull !== 0', 'non-null current-cost check'],
   ['empresasImportadas !== 1', 'single import tenant check'],
+  ['contarIdentidadesDuplicadas', 'duplicate barcode/internal-code detector'],
+  ['identidadesDuplicadas !== 0', 'ambiguous scanner identity block'],
+  ['productosSinCodigo !== 0', 'missing product identity block'],
+  ['stockNegativo !== 0', 'negative stock block'],
+  ['vendiblesConStock === 0', 'real sale candidate check'],
   ['.is("costo_actual", null)', 'null current-cost query'],
+  ['.range(desde, desde + PAGE_SIZE - 1)', 'catalog pagination beyond 1,000 rows'],
   ['head: true', 'read-only count query'],
 ]) {
   requireText(readiness, needle, label);
@@ -47,4 +58,4 @@ for (const [needle, label] of [
   requireText(matriz, needle, label);
 }
 
-console.log('Live operational readiness guard OK: read-only 983 + 417 = 1,400 verifier exposed in Matriz');
+console.log('Live operational readiness guard OK: read-only unique 983 + 417 = 1,400 verification, full catalog pagination, scanner identity and sellable-stock checks');
