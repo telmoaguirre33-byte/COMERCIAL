@@ -37,6 +37,10 @@ export type VerificacionCompraSigo = {
   detalle: string;
 };
 
+const MAX_COMPRA_ITEMS = 300;
+const MAX_CANTIDAD_ITEM = 1_000_000;
+const MAX_COSTO_UNITARIO = 1_000_000_000_000;
+
 function validarEmailOpcional(email?: string): string | null {
   const limpio = email?.trim() ?? "";
   if (!limpio) return null;
@@ -51,6 +55,22 @@ function validarCuitOpcional(cuit?: string): string | null {
   if (!limpio) return null;
   if (limpio.length !== 11) throw new Error("El CUIT del proveedor debe tener 11 dígitos.");
   return limpio;
+}
+
+function normalizarDocumento(value?: string | null): string {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "");
+}
+
+function fechaIsoValida(value?: string): boolean {
+  if (!value) return true;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const fecha = new Date(Date.UTC(year, month - 1, day));
+  return fecha.getUTCFullYear() === year && fecha.getUTCMonth() === month - 1 && fecha.getUTCDate() === day;
 }
 
 function mensajeCompra(raw: string): string {
@@ -69,6 +89,10 @@ function mensajeCompra(raw: string): string {
 }
 
 export function consolidarItemsCompra(items: CompraItemInput[]): CompraItemInput[] {
+  if (items.length > MAX_COMPRA_ITEMS) {
+    throw new Error(`La compra supera ${MAX_COMPRA_ITEMS} líneas. Dividila en más de una operación.`);
+  }
+
   const agrupados = new Map<string, { cantidad: number; costoPonderado: number }>();
 
   for (const item of items) {
@@ -76,13 +100,17 @@ export function consolidarItemsCompra(items: CompraItemInput[]): CompraItemInput
     const cantidad = Number(item.cantidad);
     const costo = Number(item.costo_unitario);
     if (!productoId) throw new Error("Hay una línea de compra sin producto seleccionado.");
-    if (!Number.isFinite(cantidad) || cantidad <= 0) throw new Error("Hay una línea de compra con cantidad inválida.");
-    if (!Number.isFinite(costo) || costo < 0) throw new Error("Hay una línea de compra con costo inválido.");
+    if (!Number.isFinite(cantidad) || cantidad <= 0 || cantidad > MAX_CANTIDAD_ITEM) {
+      throw new Error("Hay una línea de compra con cantidad inválida o fuera del límite operativo.");
+    }
+    if (!Number.isFinite(costo) || costo < 0 || costo > MAX_COSTO_UNITARIO) {
+      throw new Error("Hay una línea de compra con costo inválido o fuera del límite operativo.");
+    }
 
     const previo = agrupados.get(productoId) ?? { cantidad: 0, costoPonderado: 0 };
     const cantidadAcumulada = previo.cantidad + cantidad;
     const costoPonderado = previo.costoPonderado + cantidad * costo;
-    if (!Number.isFinite(cantidadAcumulada) || !Number.isFinite(costoPonderado)) {
+    if (!Number.isFinite(cantidadAcumulada) || !Number.isFinite(costoPonderado) || cantidadAcumulada > MAX_CANTIDAD_ITEM) {
       throw new Error("La compra supera los valores numéricos permitidos.");
     }
     agrupados.set(productoId, { cantidad: cantidadAcumulada, costoPonderado });
@@ -178,25 +206,33 @@ export async function confirmarCompraSigo(input: {
   if (!empresaId) throw new Error("No hay una empresa activa válida.");
   if (!proveedorId) throw new Error("Seleccioná un proveedor.");
   if (!idempotencyKey) throw new Error("No se pudo generar una clave segura para confirmar la compra.");
+  if (!fechaIsoValida(input.fecha)) throw new Error("La fecha de la compra no es válida.");
 
   const items = consolidarItemsCompra(input.items);
   if (items.length === 0) throw new Error("Agregá al menos un producto válido.");
 
-  // Preflight UX: evita que el usuario espere toda la transacción cuando el mismo
-  // comprobante ya está confirmado. El backend vuelve a validarlo de forma atómica.
-  if (numeroComprobante) {
-    let consulta = supabase
+  // Preflight UX: detecta también variantes de escritura del mismo comprobante.
+  // El backend vuelve a validarlo de forma atómica antes de tocar stock/costos.
+  const documentoNormalizado = normalizarDocumento(numeroComprobante);
+  if (documentoNormalizado) {
+    const { data: candidatas, error: duplicadaError } = await supabase
       .from("compras_sigo")
-      .select("id")
+      .select("id,tipo_comprobante,numero_comprobante")
       .eq("empresa_id", empresaId)
       .eq("proveedor_id", proveedorId)
-      .eq("numero_comprobante", numeroComprobante)
       .eq("estado", "confirmada")
-      .limit(1);
-    if (tipoComprobante) consulta = consulta.eq("tipo_comprobante", tipoComprobante);
-    const { data: duplicadas, error: duplicadaError } = await consulta;
+      .order("created_at", { ascending: false })
+      .limit(200);
     if (duplicadaError) throw duplicadaError;
-    if ((duplicadas ?? []).length > 0) {
+
+    const tipoNormalizado = normalizarDocumento(tipoComprobante);
+    const duplicada = (candidatas ?? []).some((compra) => {
+      const mismoNumero = normalizarDocumento(compra.numero_comprobante) === documentoNormalizado;
+      const tipoGuardado = normalizarDocumento(compra.tipo_comprobante);
+      const mismoTipo = !tipoNormalizado || !tipoGuardado || tipoGuardado === tipoNormalizado;
+      return mismoNumero && mismoTipo;
+    });
+    if (duplicada) {
       throw new Error("Ese comprobante ya fue ingresado para este proveedor. SIGO bloqueó la carga para evitar duplicar stock y costos.");
     }
   }
@@ -241,7 +277,7 @@ export async function verificarCompraSigo(input: {
         .eq("empresa_id", input.empresaId),
       supabase
         .from("productos")
-        .select("id,empresa_id,stock_actual,costo_actual,costo_ultima_compra")
+        .select("id,empresa_id,nombre,stock_actual,costo_actual,costo_ultima_compra,precio_venta")
         .eq("empresa_id", input.empresaId)
         .in("id", productoIds),
     ]);
@@ -255,6 +291,7 @@ export async function verificarCompraSigo(input: {
 
     const detalleMap = new Map((detalles ?? []).map((d) => [String(d.producto_id), d]));
     const productoMap = new Map((productos ?? []).map((p) => [String(p.id), p]));
+    const sinPrecioVenta: string[] = [];
 
     for (const item of items) {
       const detalle = detalleMap.get(item.producto_id);
@@ -268,6 +305,7 @@ export async function verificarCompraSigo(input: {
       const stockEsperado = Number(input.stockAntes[item.producto_id] ?? 0) + Number(item.cantidad);
       const stockActual = Number(producto.stock_actual ?? 0);
       const costoActual = Number(producto.costo_actual ?? producto.costo_ultima_compra ?? 0);
+      const precioVenta = Number(producto.precio_venta ?? 0);
 
       if (Math.abs(cantidadDetalle - Number(item.cantidad)) > 0.0001 || Math.abs(costoDetalle - Number(item.costo_unitario)) > 0.0001) {
         return { estado: "REVISAR", detalle: "El detalle grabado no coincide con cantidades/costos enviados." };
@@ -278,9 +316,21 @@ export async function verificarCompraSigo(input: {
       if (Math.abs(costoActual - Number(item.costo_unitario)) > 0.0001) {
         return { estado: "REVISAR", detalle: "El último costo del producto no coincide con la compra confirmada." };
       }
+      if (!Number.isFinite(precioVenta) || precioVenta <= 0) {
+        sinPrecioVenta.push(String(producto.nombre ?? item.producto_id));
+      }
     }
 
-    return { estado: "OK", detalle: "Compra, detalle, stock y último costo conciliados correctamente." };
+    if (sinPrecioVenta.length > 0) {
+      const muestra = sinPrecioVenta.slice(0, 3).join(", ");
+      const resto = sinPrecioVenta.length > 3 ? ` y ${sinPrecioVenta.length - 3} más` : "";
+      return {
+        estado: "REVISAR",
+        detalle: `Compra y stock conciliados, pero ${sinPrecioVenta.length} producto${sinPrecioVenta.length === 1 ? "" : "s"} todavía no tiene${sinPrecioVenta.length === 1 ? "" : "n"} precio de venta válido: ${muestra}${resto}. Definí precio antes de vender.`,
+      };
+    }
+
+    return { estado: "OK", detalle: "Compra, detalle, stock, último costo y preparación para venta conciliados correctamente." };
   } catch {
     return { estado: "NO_VERIFICADO", detalle: "La compra fue confirmada, pero la verificación posterior no pudo ejecutarse." };
   }
