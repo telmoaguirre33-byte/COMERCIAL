@@ -24,6 +24,9 @@ export type FacturaCompraIA = {
   items: FacturaItemIA[];
 };
 
+const TIPOS_IMAGEN_PERMITIDOS = new Set(["image/jpeg", "image/png", "image/webp"]);
+const CLIENT_TIMEOUT_MS = 55_000;
+
 function leerComoDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -34,7 +37,8 @@ function leerComoDataUrl(blob: Blob): Promise<string> {
 }
 
 async function comprimirImagen(file: File): Promise<string> {
-  if (!file.type.startsWith("image/")) throw new Error("Usá una foto o imagen JPG, PNG o WebP de la factura.");
+  if (!TIPOS_IMAGEN_PERMITIDOS.has(file.type)) throw new Error("Usá una foto o imagen JPG, PNG o WebP de la factura.");
+  if (file.size <= 0) throw new Error("La imagen de la factura está vacía.");
   if (file.size > 15 * 1024 * 1024) throw new Error("La imagen supera 15 MB. Tomá una foto más liviana.");
 
   const original = await leerComoDataUrl(file);
@@ -44,6 +48,10 @@ async function comprimirImagen(file: File): Promise<string> {
     img.onerror = () => reject(new Error("No se pudo abrir la imagen de la factura."));
     img.src = original;
   });
+
+  if (!Number.isFinite(img.naturalWidth) || !Number.isFinite(img.naturalHeight) || img.naturalWidth < 320 || img.naturalHeight < 320) {
+    throw new Error("La foto es demasiado chica para leer una factura con seguridad. Tomá otra más cerca y nítida.");
+  }
 
   const max = 1800;
   const escala = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
@@ -56,6 +64,15 @@ async function comprimirImagen(file: File): Promise<string> {
   if (!ctx) return original;
   ctx.drawImage(img, 0, 0, width, height);
   return canvas.toDataURL("image/jpeg", 0.84);
+}
+
+function normalizarMoneda(value: unknown): string | null {
+  if (value == null) return null;
+  const moneda = String(value).trim().toUpperCase().replace(/\s+/g, "");
+  if (!moneda) return null;
+  if (["ARS", "$", "AR$", "PESO", "PESOS", "PESOSARGENTINOS"].includes(moneda)) return "ARS";
+  if (["USD", "US$", "U$S", "DOLAR", "DOLARES", "DÓLAR", "DÓLARES"].includes(moneda)) return "USD";
+  return moneda.slice(0, 12);
 }
 
 function validarFactura(data: unknown): FacturaCompraIA {
@@ -84,6 +101,14 @@ function validarFactura(data: unknown): FacturaCompraIA {
       : {}
   ) as Partial<FacturaCompraIA["proveedor"]>;
 
+  const moneda = normalizarMoneda(factura.moneda);
+  if (moneda && moneda !== "ARS") {
+    throw new Error(`La factura fue detectada en ${moneda}. SIGO no la aplicará automáticamente como pesos; cargala manualmente o convertí los importes antes de ingresar stock.`);
+  }
+
+  const totalLeido = factura.total == null ? null : Number(factura.total);
+  const total = totalLeido != null && Number.isFinite(totalLeido) && totalLeido >= 0 ? totalLeido : null;
+
   return {
     proveedor: {
       razon_social: proveedor.razon_social ? String(proveedor.razon_social).trim() : null,
@@ -92,8 +117,8 @@ function validarFactura(data: unknown): FacturaCompraIA {
     fecha: factura.fecha ? String(factura.fecha) : null,
     tipo_comprobante: factura.tipo_comprobante ? String(factura.tipo_comprobante).trim() : null,
     numero_comprobante: factura.numero_comprobante ? String(factura.numero_comprobante).trim() : null,
-    moneda: factura.moneda ? String(factura.moneda).trim() : null,
-    total: factura.total == null ? null : Number(factura.total),
+    moneda: moneda ?? "ARS",
+    total,
     confianza_general: Math.max(0, Math.min(1, Number(factura.confianza_general ?? 0))),
     items: validos,
   };
@@ -106,14 +131,27 @@ export async function analizarFacturaCompraSigo(empresaId: string, file: File): 
   const token = sessionData.session?.access_token;
   if (!token) throw new Error("La sesión venció. Volvé a ingresar a SIGO.");
 
-  const response = await fetch("/api/compras/analizar-factura", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ empresaId, imageDataUrl }),
-  });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch("/api/compras/analizar-factura", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ empresaId, imageDataUrl }),
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("La lectura de la factura tardó demasiado. Probá otra vez con una foto más nítida.");
+    }
+    throw new Error("No se pudo conectar con el analizador de facturas. Revisá la conexión e intentá nuevamente.");
+  } finally {
+    window.clearTimeout(timeout);
+  }
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -121,6 +159,9 @@ export async function analizarFacturaCompraSigo(empresaId: string, file: File): 
     if (code === "AI_NOT_CONFIGURED") throw new Error("La IA de facturas todavía no tiene configurada su clave en producción.");
     if (code === "FORBIDDEN") throw new Error("Tu usuario no tiene permiso para ingresar compras en esta empresa.");
     if (code === "INVALID_IMAGE") throw new Error("La foto no tiene un formato válido o es demasiado pesada.");
+    if (code === "AI_TIMEOUT") throw new Error("La lectura de la factura tardó demasiado. Probá nuevamente con una foto más nítida.");
+    if (code === "AI_UNAVAILABLE") throw new Error("El servicio de lectura de facturas no está disponible en este momento. La compra manual sigue funcionando.");
+    if (code === "AI_INVALID_OUTPUT") throw new Error("La IA no pudo interpretar la factura con seguridad. Probá con otra foto o cargá la compra manualmente.");
     throw new Error(String(payload?.message ?? payload?.error ?? "No se pudo analizar la factura con IA."));
   }
 
