@@ -34,7 +34,8 @@ requireText(readiness, "lower('SIGO Administración')", 'single SIGO Administrac
 requireText(readiness, 'v_costos_null_tenant <> 0', 'tenant null-cost check');
 requireText(readiness, 'alter column costo_actual set not null', 'final cost constraint');
 
-requireText(products, 'input.costoActual ?? (input.productoId ? null : 0)', 'new-product current-cost default');
-requireText(products, 'input.costoUltimaCompra ?? (input.productoId ? null : 0)', 'new-product last-cost default');
+requireText(products, 'const esNuevo = !input.productoId', 'new-product branch');
+requireText(products, 'p_costo_actual: input.costoActual ?? (esNuevo ? 0 : null)', 'new-product current-cost default');
+requireText(products, 'p_costo_ultima_compra: input.costoUltimaCompra ?? (esNuevo ? 0 : null)', 'new-product last-cost default');
 
 console.log('Operational data guards OK: 1,400 readiness + non-null costs + max 300 purchase lines');
