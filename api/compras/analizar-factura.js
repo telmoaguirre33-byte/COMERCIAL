@@ -1,5 +1,6 @@
 const MAX_DATA_URL_LENGTH = 8_000_000;
 const MAX_INVOICE_ITEMS = 300;
+const OPENAI_TIMEOUT_MS = 45_000;
 const ALLOWED_IMAGE = /^data:image\/(jpeg|jpg|png|webp);base64,/i;
 
 function json(res, status, body) {
@@ -39,6 +40,15 @@ function confianza(value) {
   const numero = Number(value);
   if (!Number.isFinite(numero)) return 0;
   return Math.max(0, Math.min(1, numero));
+}
+
+function normalizarMoneda(value) {
+  const moneda = textoSeguro(value, 12);
+  if (!moneda) return null;
+  const limpia = moneda.toUpperCase().replace(/\s+/g, "");
+  if (["ARS", "$", "AR$", "PESO", "PESOS", "PESOSARGENTINOS"].includes(limpia)) return "ARS";
+  if (["USD", "US$", "U$S", "DOLAR", "DOLARES", "DÓLAR", "DÓLARES"].includes(limpia)) return "USD";
+  return limpia.slice(0, 12);
 }
 
 function normalizarFacturaIA(raw) {
@@ -82,7 +92,7 @@ function normalizarFacturaIA(raw) {
     fecha,
     tipo_comprobante: textoSeguro(raw.tipo_comprobante, 60),
     numero_comprobante: textoSeguro(raw.numero_comprobante, 80),
-    moneda: textoSeguro(raw.moneda, 12),
+    moneda: normalizarMoneda(raw.moneda),
     total: numeroSeguro(raw.total, { min: 0, max: 1_000_000_000_000, nullable: true }),
     confianza_general: confianza(raw.confianza_general),
     items,
@@ -139,15 +149,18 @@ No inventes datos. Si algo no es legible, usá null y baja confianza.
 Extraé únicamente productos/servicios efectivamente facturados; no conviertas IVA, descuentos globales, percepciones, subtotales ni totales en productos.
 Para cada ítem, cantidad y costo_unitario deben ser números. costo_unitario es el precio unitario de compra antes de multiplicar por cantidad. Si sólo figura total de línea y cantidad, calculá costo unitario.
 Si aparece un código de producto del proveedor, guardalo en codigo. Si aparece un EAN/UPC/código de barras, guardalo en codigo_barras.
-fecha en formato YYYY-MM-DD cuando sea posible. CUIT sólo dígitos.
+fecha en formato YYYY-MM-DD cuando sea posible. CUIT sólo dígitos. moneda debe ser el código ISO cuando se identifique (por ejemplo ARS o USD).
 Respondé SOLAMENTE JSON válido con esta forma exacta:
 {"proveedor":{"razon_social":string|null,"cuit":string|null},"fecha":string|null,"tipo_comprobante":string|null,"numero_comprobante":string|null,"moneda":string|null,"total":number|null,"confianza_general":number,"items":[{"descripcion":string,"codigo":string|null,"codigo_barras":string|null,"cantidad":number,"costo_unitario":number,"total_linea":number|null,"confianza":number}]}
 confianza_general y confianza van de 0 a 1.`;
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
   let aiResponse;
   try {
     aiResponse = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
+      signal: controller.signal,
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
@@ -164,8 +177,13 @@ confianza_general y confianza van de 0 a 1.`;
         }],
       }),
     });
-  } catch {
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      return json(res, 504, { error: "AI_TIMEOUT", message: "La lectura de la factura tardó demasiado. Probá nuevamente con una foto más nítida." });
+    }
     return json(res, 502, { error: "AI_UNAVAILABLE", message: "No se pudo conectar con el servicio de IA." });
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (!aiResponse.ok) {
