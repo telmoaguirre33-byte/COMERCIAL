@@ -107,7 +107,7 @@ begin
 	2309	CUADERNO LAPRIDA ABC	8000	5		4200		Librería
 7798451361292		Carpeta 3x40 reysa motores	8930	0				Librería
 7798371107963		Separador inkdrop metal	3610	1		1805		Librería
-7798371108076		Separador	3600	0					Librería
+7798371108076		Separador	3600	0				Librería
 $stock$
   ) into v_inserted;
 
