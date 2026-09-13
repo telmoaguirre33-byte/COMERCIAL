@@ -75,6 +75,7 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
   const [facturaProcesando, setFacturaProcesando] = useState(false);
   const [facturaAplicando, setFacturaAplicando] = useState(false);
   const [facturaMensaje, setFacturaMensaje] = useState("");
+  const [preciosVentaFactura, setPreciosVentaFactura] = useState<Record<number, string>>({});
   const fotoRef = useRef<HTMLInputElement | null>(null);
   const archivoRef = useRef<HTMLInputElement | null>(null);
   const idempotencyKeyRef = useRef(nuevaClave());
@@ -119,6 +120,7 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
     setUltimaConciliacion(null);
     setFacturaIA(null);
     setFacturaMensaje("");
+    setPreciosVentaFactura({});
     setError("");
     void cargar(empresaId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -130,6 +132,15 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
   );
 
   const proveedorMap = useMemo(() => new Map(proveedores.map((p) => [p.id, p.razon_social])), [proveedores]);
+
+  const preciosFacturaPendientes = useMemo(() => {
+    if (!facturaIA) return 0;
+    return facturaIA.items.reduce((faltantes, item, index) => {
+      if (encontrarProducto(item, productos)) return faltantes;
+      const precio = Number(preciosVentaFactura[index]);
+      return faltantes + (!Number.isFinite(precio) || precio <= 0 ? 1 : 0);
+    }, 0);
+  }, [facturaIA, productos, preciosVentaFactura]);
 
   function editarLinea(key: string, patch: Partial<Linea>) {
     setLineas((actual) => actual.map((l) => l.key === key ? { ...l, ...patch } : l));
@@ -187,12 +198,13 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
     setFacturaProcesando(true);
     setFacturaIA(null);
     setFacturaMensaje("");
+    setPreciosVentaFactura({});
     setError("");
     try {
       const resultado = await analizarFacturaCompraSigo(empresaOperacion, file);
       if (empresaActivaRef.current !== empresaOperacion) return;
       setFacturaIA(resultado);
-      setFacturaMensaje(`IA detectó ${resultado.items.length} ítem${resultado.items.length === 1 ? "" : "s"}. Revisá y luego aplicá la factura.`);
+      setFacturaMensaje(`IA detectó ${resultado.items.length} ítem${resultado.items.length === 1 ? "" : "s"}. Revisá y definí precio de venta para cada producto nuevo antes de aplicar la factura.`);
     } catch (err) {
       if (empresaActivaRef.current === empresaOperacion) {
         setError(err instanceof Error ? err.message : "No se pudo analizar la factura.");
@@ -211,6 +223,15 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
     setError("");
     setFacturaMensaje("");
     try {
+      const precioFaltanteInicial = facturaIA.items.findIndex((item, index) => {
+        if (encontrarProducto(item, productos)) return false;
+        const precio = Number(preciosVentaFactura[index]);
+        return !Number.isFinite(precio) || precio <= 0;
+      });
+      if (precioFaltanteInicial >= 0) {
+        throw new Error(`Definí un precio de venta mayor a cero para "${facturaIA.items[precioFaltanteInicial].descripcion}" antes de crear el producto.`);
+      }
+
       let proveedoresActuales = [...proveedores];
       let proveedor = undefined as ProveedorSigo | undefined;
       const cuitFactura = digitos(facturaIA.proveedor.cuit);
@@ -240,9 +261,13 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
       let creados = 0;
       let existentes = 0;
 
-      for (const item of facturaIA.items) {
+      for (const [index, item] of facturaIA.items.entries()) {
         let producto = encontrarProducto(item, productosActuales);
         if (!producto) {
+          const precioVenta = Number(preciosVentaFactura[index]);
+          if (!Number.isFinite(precioVenta) || precioVenta <= 0) {
+            throw new Error(`Definí un precio de venta mayor a cero para "${item.descripcion}" antes de crear el producto.`);
+          }
           const codigoBarras = item.codigo_barras?.trim() || null;
           const codigoInterno = item.codigo?.trim() && item.codigo?.trim() !== codigoBarras ? item.codigo.trim() : null;
           const id = await guardarProductoSigo({
@@ -252,7 +277,7 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
             codigoInterno,
             costoActual: item.costo_unitario,
             costoUltimaCompra: item.costo_unitario,
-            precioVenta: null,
+            precioVenta,
             stockActual: null,
             stockMinimo: null,
             stockMaximo: null,
@@ -270,9 +295,9 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
             proveedor: facturaIA.proveedor.razon_social,
             costo_actual: item.costo_unitario,
             costo_ultima_compra: item.costo_unitario,
-            precio_venta: null,
-            margen_ganancia: null,
-            margen_porcentaje: null,
+            precio_venta: precioVenta,
+            margen_ganancia: precioVenta - item.costo_unitario,
+            margen_porcentaje: item.costo_unitario > 0 ? ((precioVenta - item.costo_unitario) / item.costo_unitario) * 100 : null,
             stock_actual: 0,
             stock_minimo: null,
             stock_maximo: null,
@@ -307,7 +332,7 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
       if (facturaIA.tipo_comprobante) setTipo(facturaIA.tipo_comprobante);
       if (facturaIA.numero_comprobante) setNumero(facturaIA.numero_comprobante);
       idempotencyKeyRef.current = nuevaClave();
-      setFacturaMensaje(`Factura preparada: ${existentes} producto${existentes === 1 ? "" : "s"} existente${existentes === 1 ? "" : "s"} y ${creados} nuevo${creados === 1 ? "" : "s"}. Revisá las líneas y confirmá para ingresar el stock.`);
+      setFacturaMensaje(`Factura preparada: ${existentes} producto${existentes === 1 ? "" : "s"} existente${existentes === 1 ? "" : "s"} y ${creados} nuevo${creados === 1 ? "" : "s"} con precio de venta definido. Revisá las líneas y confirmá para ingresar el stock.`);
     } catch (err) {
       if (empresaActivaRef.current === empresaOperacion) {
         setError(err instanceof Error ? err.message : "No se pudo preparar la compra desde la factura.");
@@ -367,6 +392,7 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
       setNumero("");
       setFacturaIA(null);
       setFacturaMensaje("");
+      setPreciosVentaFactura({});
       await cargar(empresaOperacion);
     } catch (err) {
       if (empresaActivaRef.current === empresaOperacion) {
@@ -397,7 +423,7 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
           <p>{ultimaConciliacion.resultado.detalle}</p>
           <p style={{ marginBottom: 0 }}>
             {ultimaConciliacion.resultado.estado === "OK"
-              ? "La recepción quedó verificada contra detalle, stock y último costo."
+              ? "La recepción quedó verificada contra detalle, stock, último costo y preparación para venta."
               : "No repitas la compra: revisá el estado antes de volver a confirmar para evitar duplicados."}
           </p>
         </div>
@@ -407,7 +433,7 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
         <div className="page-header">
           <div>
             <h3 style={{ marginBottom: 6 }}>📷 Escanear factura con IA</h3>
-            <p style={{ margin: 0 }}>Sacá una foto o elegí una imagen. SIGO lee proveedor, fecha, comprobante, productos, cantidades y costos. Si un producto no existe, lo crea; el stock se modifica recién cuando confirmás la compra.</p>
+            <p style={{ margin: 0 }}>Sacá una foto o elegí una imagen. SIGO lee proveedor, fecha, comprobante, productos, cantidades y costos. Si un producto no existe, definís su precio de venta antes de crearlo; el stock se modifica recién cuando confirmás la compra.</p>
           </div>
           <span style={{ fontSize: 12, fontWeight: 700, color: "#1d4ed8" }}>IA · revisión antes de stock</span>
         </div>
@@ -430,27 +456,46 @@ export default function ComprasOperativas({ empresaId }: { empresaId: string }) 
             </div>
             <div className="table-wrapper" style={{ marginTop: 14 }}>
               <table className="products-table">
-                <thead><tr><th>Producto leído</th><th>Código</th><th>Cant.</th><th>Costo unit.</th><th>Confianza</th><th>Estado</th></tr></thead>
+                <thead><tr><th>Producto leído</th><th>Código</th><th>Cant.</th><th>Costo unit.</th><th>Precio venta</th><th>Confianza</th><th>Estado</th></tr></thead>
                 <tbody>
                   {facturaIA.items.map((item, index) => {
                     const existente = encontrarProducto(item, productos);
+                    const precioExistente = Number(existente?.precio_venta ?? 0);
                     return (
                       <tr key={`${item.descripcion}-${index}`}>
                         <td><strong>{item.descripcion}</strong></td>
                         <td>{item.codigo_barras ?? item.codigo ?? "-"}</td>
                         <td>{item.cantidad}</td>
                         <td>$ {item.costo_unitario.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
+                        <td>
+                          {existente
+                            ? (precioExistente > 0 ? `$ ${precioExistente.toLocaleString("es-AR", { minimumFractionDigits: 2 })}` : "Sin precio")
+                            : <input
+                                type="number"
+                                min="0.01"
+                                step="0.01"
+                                value={preciosVentaFactura[index] ?? ""}
+                                onChange={(e) => setPreciosVentaFactura((actual) => ({ ...actual, [index]: e.target.value }))}
+                                placeholder="Obligatorio"
+                                aria-label={`Precio de venta para ${item.descripcion}`}
+                              />}
+                        </td>
                         <td>{Math.round(item.confianza * 100)}%</td>
-                        <td>{existente ? `Existente: ${existente.nombre}` : "NUEVO · se creará"}</td>
+                        <td>{existente ? `Existente: ${existente.nombre}` : "NUEVO · requiere precio"}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
+            {preciosFacturaPendientes > 0 && (
+              <p className="form-error" role="alert" style={{ marginTop: 10 }}>
+                Falta definir precio de venta para {preciosFacturaPendientes} producto{preciosFacturaPendientes === 1 ? "" : "s"} nuevo{preciosFacturaPendientes === 1 ? "" : "s"}. SIGO no los creará sin precio.
+              </p>
+            )}
             <div className="form-actions" style={{ justifyContent: "flex-start" }}>
-              <button type="button" className="primary-button" disabled={facturaAplicando || facturaProcesando || saving} onClick={() => void aplicarFacturaAnalizada()}>{facturaAplicando ? "Preparando compra…" : "Usar datos de esta factura"}</button>
-              <button type="button" className="admin-button" disabled={facturaAplicando || facturaProcesando || saving} onClick={() => { setFacturaIA(null); setFacturaMensaje(""); }}>Descartar lectura</button>
+              <button type="button" className="primary-button" disabled={facturaAplicando || facturaProcesando || saving || preciosFacturaPendientes > 0} onClick={() => void aplicarFacturaAnalizada()}>{facturaAplicando ? "Preparando compra…" : "Usar datos de esta factura"}</button>
+              <button type="button" className="admin-button" disabled={facturaAplicando || facturaProcesando || saving} onClick={() => { setFacturaIA(null); setFacturaMensaje(""); setPreciosVentaFactura({}); }}>Descartar lectura</button>
             </div>
           </div>
         )}
