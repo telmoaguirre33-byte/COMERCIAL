@@ -109,7 +109,7 @@ const checks = [
   },
   {
     file: 'supabase/migrations/20260912235500_productos_alta_costos_cero.sql',
-    required: ['greatest(coalesce(p_costo, 0), 0)', 'costo_actual', 'crear_producto_sigo'],
+    required: ['coalesce(p_costo_actual, 0)', 'costo_actual', 'guardar_producto_sigo'],
     label: 'product creation coalesces missing current cost to zero',
   },
   {
