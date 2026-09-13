@@ -1,0 +1,87 @@
+import fs from 'node:fs';
+
+const checks = [
+  {
+    file: 'api/arca/preflight.js',
+    required: [
+      'arca.configure',
+      'tiene_permiso_empresa',
+      'arca_config',
+      'arca_puntos_venta',
+      'certificado_ref',
+      'WSFEv1',
+      'wsaa_service === "wsfe"',
+      'wsaahomo.afip.gov.ar',
+      'wsaa.afip.gov.ar',
+      'wswhomo.afip.gov.ar/wsfev1',
+      'servicios1.afip.gov.ar/wsfev1',
+      'autenticacionRealValidada',
+      'no habilita CAE',
+    ],
+    forbidden: [
+      'SUPABASE_SERVICE_ROLE_KEY',
+      'process.env.ARCA_PRIVATE_KEY',
+      'process.env.CLAVE_FISCAL',
+    ],
+    label: 'ARCA backend preflight is tenant-scoped and secret-safe',
+  },
+  {
+    file: 'src/ArcaPreflight.tsx',
+    required: [
+      '/api/arca/preflight',
+      'data.session?.access_token',
+      'empresaId',
+      'Autenticación WSAA real validada',
+      'Validar preparación ARCA',
+    ],
+    label: 'ARCA preflight UI uses authenticated backend validation',
+  },
+  {
+    file: 'src/ArcaFacturacion.tsx',
+    required: [
+      'ArcaPreflight',
+      'wsaa_service: "wsfe"',
+      'wsfe_version: "WSFEv1"',
+      'disabled={!config?.activo || !config?.ultima_prueba_ok}',
+      'autenticación WSAA real',
+      'ws-factura-electronica.asp',
+    ],
+    label: 'ARCA UI keeps CAE issuance blocked until real WSAA validation',
+  },
+  {
+    file: 'supabase/migrations/20260910021200_arca_config_segura.sql',
+    required: [
+      'arca_config',
+      'arca_puntos_venta',
+      'arca_comprobantes',
+      "tiene_permiso_empresa(empresa_id, 'arca.configure')",
+      "tiene_permiso_empresa(empresa_id, 'invoices.issue')",
+      'Nunca almacenar clave fiscal',
+    ],
+    label: 'ARCA persistence is tenant isolated and does not store fiscal password',
+  },
+];
+
+let failed = false;
+for (const check of checks) {
+  if (!fs.existsSync(check.file)) {
+    console.error(`FAIL ${check.label}: missing ${check.file}`);
+    failed = true;
+    continue;
+  }
+  const content = fs.readFileSync(check.file, 'utf8');
+  const missing = check.required.filter((token) => !content.includes(token));
+  const forbidden = (check.forbidden ?? []).filter((token) => content.includes(token));
+  if (missing.length) {
+    console.error(`FAIL ${check.label}: missing ${missing.join(', ')}`);
+    failed = true;
+  }
+  if (forbidden.length) {
+    console.error(`FAIL ${check.label}: forbidden ${forbidden.join(', ')}`);
+    failed = true;
+  }
+  if (!missing.length && !forbidden.length) console.log(`PASS ${check.label}`);
+}
+
+if (failed) process.exit(1);
+console.log('SIGO_ARCA_SAFETY_CHECKS_OK');
