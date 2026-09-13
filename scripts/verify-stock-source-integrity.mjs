@@ -15,9 +15,22 @@ if (computacionFiles.length !== 5) {
 
 const importKeys = new Set();
 const identities = new Map();
+const duplicateIdentities = new Map();
 
 function normalize(value) {
   return String(value ?? '').trim().toUpperCase();
+}
+
+function registerIdentity(code, rowRef) {
+  const previous = identities.get(code);
+  if (!previous) {
+    identities.set(code, rowRef);
+    return;
+  }
+  if (previous === rowRef) return;
+  const refs = duplicateIdentities.get(code) ?? new Set([previous]);
+  refs.add(rowRef);
+  duplicateIdentities.set(code, refs);
 }
 
 function inspectGroup(groupFiles, sector, expectedRows) {
@@ -49,11 +62,7 @@ function inspectGroup(groupFiles, sector, expectedRows) {
 
       const rowRef = `${file}:${index + 1}:${name}`;
       for (const code of new Set([barcode, internal].filter(Boolean))) {
-        const previous = identities.get(code);
-        if (previous && previous !== rowRef) {
-          throw new Error(`Duplicate product identity ${code}: ${previous} <> ${rowRef}`);
-        }
-        identities.set(code, rowRef);
+        registerIdentity(code, rowRef);
       }
     }
     rows += payloadRows.length;
@@ -70,5 +79,12 @@ const computacionRows = inspectGroup(computacionFiles, 'Computacion', 417);
 const total = libreriaRows + computacionRows;
 if (total !== 1400) throw new Error(`Combined source rows mismatch: expected 1400, found ${total}`);
 if (importKeys.size !== 15) throw new Error(`Expected 15 unique import keys, found ${importKeys.size}`);
+
+if (duplicateIdentities.size > 0) {
+  const detail = [...duplicateIdentities.entries()]
+    .map(([code, refs]) => `${code}: ${[...refs].join(' <> ')}`)
+    .join('\n');
+  throw new Error(`Duplicate product identities found (${duplicateIdentities.size}):\n${detail}`);
+}
 
 console.log(`Stock source integrity OK: Libreria=${libreriaRows} Computacion=${computacionRows} Total=${total} batches=${importKeys.size} unique product identities=${identities.size}`);
