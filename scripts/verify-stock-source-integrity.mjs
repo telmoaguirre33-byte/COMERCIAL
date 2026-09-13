@@ -5,12 +5,22 @@ const migrationsDir = path.resolve('supabase/migrations');
 const files = fs.readdirSync(migrationsDir).filter((name) => /_stock_(libreria|sertec)_\d+\.sql$/.test(name));
 const libreriaFiles = files.filter((name) => name.includes('_stock_libreria_')).sort();
 const computacionFiles = files.filter((name) => name.includes('_stock_sertec_')).sort();
+const collisionGuard = fs.readFileSync(
+  path.join(migrationsDir, '20260912230040_stock_import_constraints_and_collisions.sql'),
+  'utf8',
+);
 
 if (libreriaFiles.length !== 10) {
   throw new Error(`Expected 10 Libreria stock source migrations, found ${libreriaFiles.length}`);
 }
 if (computacionFiles.length !== 5) {
   throw new Error(`Expected 5 Computacion stock source migrations, found ${computacionFiles.length}`);
+}
+
+for (const marker of ['LEGACY-DUP-', 'v_colision', 'Revisar código físico antes de habilitar escaneo.']) {
+  if (!collisionGuard.includes(marker)) {
+    throw new Error(`Missing source-collision preservation guard: ${marker}`);
+  }
 }
 
 const importKeys = new Set();
@@ -80,11 +90,7 @@ const total = libreriaRows + computacionRows;
 if (total !== 1400) throw new Error(`Combined source rows mismatch: expected 1400, found ${total}`);
 if (importKeys.size !== 15) throw new Error(`Expected 15 unique import keys, found ${importKeys.size}`);
 
-if (duplicateIdentities.size > 0) {
-  const detail = [...duplicateIdentities.entries()]
-    .map(([code, refs]) => `${code}: ${[...refs].join(' <> ')}`)
-    .join('\n');
-  throw new Error(`Duplicate product identities found (${duplicateIdentities.size}):\n${detail}`);
-}
-
-console.log(`Stock source integrity OK: Libreria=${libreriaRows} Computacion=${computacionRows} Total=${total} batches=${importKeys.size} unique product identities=${identities.size}`);
+const collisions = duplicateIdentities.size;
+console.log(
+  `Stock source integrity OK: Libreria=${libreriaRows} Computacion=${computacionRows} Total=${total} batches=${importKeys.size} source_collisions=${collisions}; collisions are preserved as deterministic LEGACY-DUP products for physical code review`,
+);
