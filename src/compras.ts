@@ -54,6 +54,7 @@ function validarCuitOpcional(cuit?: string): string | null {
 }
 
 function mensajeCompra(raw: string): string {
+  if (raw.includes("PURCHASE_DOCUMENT_DUPLICATE")) return "Ese comprobante ya fue ingresado para este proveedor. SIGO bloqueó la carga para evitar duplicar stock y costos.";
   if (raw.includes("IDEMPOTENCY_CONFLICT")) return "Esta compra ya fue confirmada con la misma clave pero datos distintos. Actualizá Compras antes de volver a intentar.";
   if (raw.includes("IDEMPOTENCY_KEY_REQUIRED") || raw.includes("IDEMPOTENCY_KEY_INVALID")) return "No se pudo generar una clave segura para confirmar la compra. Reiniciá la carga antes de volver a intentar.";
   if (raw.includes("DUPLICATE_PRODUCT_ITEM")) return "El mismo producto aparece más de una vez. Unificá la cantidad en una sola línea.";
@@ -114,14 +115,29 @@ export async function guardarProveedorSigo(input: {
 }): Promise<ProveedorSigo> {
   const razonSocial = input.razonSocial.trim();
   if (!razonSocial) throw new Error("La razón social es obligatoria.");
-  if (!input.empresaId?.trim()) throw new Error("No hay una empresa activa válida.");
+  const empresaId = input.empresaId?.trim() ?? "";
+  if (!empresaId) throw new Error("No hay una empresa activa válida.");
+  const cuit = validarCuitOpcional(input.cuit);
+
+  if (cuit) {
+    const { data: existentes, error: existenteError } = await supabase
+      .from("proveedores_sigo")
+      .select("id,empresa_id,razon_social,nombre_fantasia,cuit,telefono,email,direccion,activo")
+      .eq("empresa_id", empresaId)
+      .eq("cuit", cuit)
+      .eq("activo", true)
+      .limit(1);
+    if (existenteError) throw existenteError;
+    const existente = (existentes ?? [])[0] as ProveedorSigo | undefined;
+    if (existente) return existente;
+  }
 
   const { data, error } = await supabase
     .from("proveedores_sigo")
     .insert({
-      empresa_id: input.empresaId.trim(),
+      empresa_id: empresaId,
       razon_social: razonSocial,
-      cuit: validarCuitOpcional(input.cuit),
+      cuit,
       telefono: input.telefono?.trim() || null,
       email: validarEmailOpcional(input.email),
       activo: true,
@@ -157,6 +173,8 @@ export async function confirmarCompraSigo(input: {
   const empresaId = input.empresaId?.trim() ?? "";
   const proveedorId = input.proveedorId?.trim() ?? "";
   const idempotencyKey = input.idempotencyKey?.trim() ?? "";
+  const tipoComprobante = input.tipoComprobante?.trim() || null;
+  const numeroComprobante = input.numeroComprobante?.trim() || null;
   if (!empresaId) throw new Error("No hay una empresa activa válida.");
   if (!proveedorId) throw new Error("Seleccioná un proveedor.");
   if (!idempotencyKey) throw new Error("No se pudo generar una clave segura para confirmar la compra.");
@@ -164,13 +182,32 @@ export async function confirmarCompraSigo(input: {
   const items = consolidarItemsCompra(input.items);
   if (items.length === 0) throw new Error("Agregá al menos un producto válido.");
 
+  // Preflight UX: evita que el usuario espere toda la transacción cuando el mismo
+  // comprobante ya está confirmado. El backend vuelve a validarlo de forma atómica.
+  if (numeroComprobante) {
+    let consulta = supabase
+      .from("compras_sigo")
+      .select("id")
+      .eq("empresa_id", empresaId)
+      .eq("proveedor_id", proveedorId)
+      .eq("numero_comprobante", numeroComprobante)
+      .eq("estado", "confirmada")
+      .limit(1);
+    if (tipoComprobante) consulta = consulta.eq("tipo_comprobante", tipoComprobante);
+    const { data: duplicadas, error: duplicadaError } = await consulta;
+    if (duplicadaError) throw duplicadaError;
+    if ((duplicadas ?? []).length > 0) {
+      throw new Error("Ese comprobante ya fue ingresado para este proveedor. SIGO bloqueó la carga para evitar duplicar stock y costos.");
+    }
+  }
+
   const { data, error } = await supabase.rpc("confirmar_compra_sigo", {
     p_empresa_id: empresaId,
     p_proveedor_id: proveedorId,
     p_items: items,
     p_fecha: input.fecha || null,
-    p_tipo_comprobante: input.tipoComprobante?.trim() || null,
-    p_numero_comprobante: input.numeroComprobante?.trim() || null,
+    p_tipo_comprobante: tipoComprobante,
+    p_numero_comprobante: numeroComprobante,
     p_idempotency_key: idempotencyKey,
   });
   if (error) throw new Error(mensajeCompra(error.message || "No se pudo confirmar la compra."));
