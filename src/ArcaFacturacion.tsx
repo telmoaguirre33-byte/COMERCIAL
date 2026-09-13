@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import ArcaPreflight from "./ArcaPreflight";
 import { supabase } from "./supabase";
 
 type Ambiente = "homologacion" | "produccion";
@@ -27,6 +28,7 @@ const ARCA_PORTAL = "https://www.arca.gob.ar/";
 const ARCA_FACTURA = "https://www.arca.gob.ar/fe/";
 const ARCA_WS = "https://www.arca.gob.ar/ws/documentacion/wsaa.asp";
 const ARCA_CERTIFICADOS = "https://www.arca.gob.ar/ws/documentacion/certificados.asp";
+const ARCA_WSFE = "https://www.arca.gob.ar/ws/documentacion/ws-factura-electronica.asp";
 
 export default function ArcaFacturacion({ empresaId }: { empresaId: string }) {
   const [config, setConfig] = useState<ArcaConfig | null>(null);
@@ -164,15 +166,18 @@ export default function ArcaFacturacion({ empresaId }: { empresaId: string }) {
             </section>
 
             <section className="panel arca-card arca-connect-card">
-              <div className="panel-header"><div><h3>2. Vincular con ARCA</h3><p>ARCA exige certificado digital y autorización para WSFEv1.</p></div></div>
+              <div className="panel-header"><div><h3>2. Vincular con ARCA</h3><p>ARCA exige certificado digital X.509 y autorización para el servicio WSFE.</p></div></div>
               <div className="arca-connect-actions">
                 <a className="primary-button arca-link" href={ARCA_PORTAL} target="_blank" rel="noreferrer">Ingresar a ARCA</a>
                 <a className="admin-button arca-link" href={ARCA_CERTIFICADOS} target="_blank" rel="noreferrer">Certificados digitales</a>
-                <a className="admin-button arca-link" href={ARCA_WS} target="_blank" rel="noreferrer">Configurar WSAA / WSFEv1</a>
+                <a className="admin-button arca-link" href={ARCA_WS} target="_blank" rel="noreferrer">Configurar WSAA / WSFE</a>
+                <a className="admin-button arca-link" href={ARCA_WSFE} target="_blank" rel="noreferrer">Documentación WSFEv1</a>
                 <a className="admin-button arca-link" href={ARCA_FACTURA} target="_blank" rel="noreferrer">Factura electrónica ARCA</a>
               </div>
-              <div className="arca-security-note"><strong>SIGO nunca debe pedir tu clave fiscal.</strong><span>La vinculación se hace en ARCA. SIGO trabaja con certificado digital y WSFEv1 para solicitar el CAE.</span></div>
+              <div className="arca-security-note"><strong>SIGO nunca debe pedir tu clave fiscal.</strong><span>La vinculación se hace en ARCA. SIGO trabaja con certificado digital y WSFEv1 para solicitar el CAE. En ARCA, el servicio de negocio correspondiente a WSFEv1 se identifica como WSFE.</span></div>
             </section>
+
+            <ArcaPreflight empresaId={empresaId} />
 
             <section className="panel arca-card">
               <div className="panel-header"><div><h3>3. Punto de venta</h3><p>Debe ser el punto de venta habilitado en ARCA para el sistema de facturación elegido.</p></div></div>
@@ -187,7 +192,7 @@ export default function ArcaFacturacion({ empresaId }: { empresaId: string }) {
             <section className="panel arca-card arca-emit-card">
               <div className="panel-header"><div><h3>4. Emisión desde SIGO</h3><p>Cuando certificado + relación WSFEv1 + punto de venta estén validados, SIGO podrá solicitar CAE automáticamente.</p></div></div>
               <button className="primary-button" disabled={!config?.activo || !config?.ultima_prueba_ok}>Emitir factura electrónica</button>
-              {!config?.activo || !config?.ultima_prueba_ok ? <small>La emisión queda bloqueada hasta validar la conexión segura con ARCA.</small> : null}
+              {!config?.activo || !config?.ultima_prueba_ok ? <small>La emisión queda bloqueada hasta validar una autenticación WSAA real con el certificado de esta empresa.</small> : null}
             </section>
           </div>
           {ok ? <p className="sigo-matriz-success" role="status">{ok}</p> : null}
