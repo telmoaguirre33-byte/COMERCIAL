@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import {
   cargarMisEmpresas,
   guardarEmpresaActiva,
@@ -93,15 +92,15 @@ export default function TenantSwitcher({ value, onChange, onStateChange, disable
   if (loading || error || empresas.length === 0) return null;
 
   return (
-    <div style={shellStyle}>
-      <label>
-        <span style={eyebrowStyle}>Empresa activa</span>
+    <div className="sigo-company-switcher">
+      <label className="sigo-company-field">
+        <span className="sigo-company-eyebrow">Empresa activa</span>
         <select
           value={selected}
           disabled={disabled || empresas.length === 1}
           onChange={(event) => selectEmpresa(event.target.value)}
           aria-label="Seleccionar empresa activa"
-          style={selectStyle}
+          className="sigo-company-select"
         >
           {empresas.map((empresa) => (
             <option key={empresa.empresa_id} value={empresa.empresa_id}>
@@ -110,61 +109,14 @@ export default function TenantSwitcher({ value, onChange, onStateChange, disable
           ))}
         </select>
       </label>
-      <div style={buttonRowStyle}>
-        <button type="button" disabled={disabled} onClick={() => void load()} style={secondaryButtonStyle}>
-          Actualizar
+      <div className="sigo-company-actions">
+        <button type="button" disabled={disabled} onClick={() => void load()} className="sigo-company-button" aria-label="Actualizar empresa">
+          <span aria-hidden="true">↻</span><span>Actualizar</span>
         </button>
-        <button type="button" disabled={disabled} onClick={() => void cerrarSesion()} style={secondaryButtonStyle}>
-          Salir
+        <button type="button" disabled={disabled} onClick={() => void cerrarSesion()} className="sigo-company-button sigo-company-logout" aria-label="Cerrar sesión">
+          <span aria-hidden="true">↗</span><span>Salir</span>
         </button>
       </div>
     </div>
   );
 }
-
-const shellStyle: CSSProperties = {
-  display: "grid",
-  gap: 6,
-  minWidth: 220,
-  padding: "10px 12px",
-  border: "1px solid rgba(15, 23, 42, .10)",
-  borderRadius: 14,
-  background: "rgba(255, 255, 255, .92)",
-  boxShadow: "0 8px 24px rgba(15, 23, 42, .06)",
-};
-
-const eyebrowStyle: CSSProperties = {
-  display: "block",
-  marginBottom: 4,
-  fontSize: 11,
-  fontWeight: 700,
-  letterSpacing: ".08em",
-  textTransform: "uppercase",
-  opacity: 0.58,
-};
-
-const selectStyle: CSSProperties = {
-  width: "100%",
-  border: 0,
-  outline: 0,
-  padding: 0,
-  font: "inherit",
-  fontWeight: 700,
-  background: "transparent",
-  cursor: "pointer",
-};
-
-const secondaryButtonStyle: CSSProperties = {
-  border: "1px solid rgba(15, 23, 42, .14)",
-  borderRadius: 10,
-  padding: "8px 10px",
-  background: "transparent",
-  fontWeight: 700,
-  cursor: "pointer",
-};
-
-const buttonRowStyle: CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 8,
-};
