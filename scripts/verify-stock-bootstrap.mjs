@@ -5,23 +5,41 @@ const root = process.cwd();
 const migrationsDir = path.join(root, "supabase", "migrations");
 const baseName = "20260912230000_stock_import_base.sql";
 const repairName = "20260912230030_stock_import_single_tenant_fix.sql";
+const constraintsName = "20260912230040_stock_import_constraints_and_collisions.sql";
 const finalName = "20260912231600_stock_import_verify.sql";
+const productCreateName = "20260912235500_productos_alta_costos_cero.sql";
 const libreriaNames = Array.from({ length: 10 }, (_, index) => `2026091223${String(index + 1).padStart(2, "0")}00_stock_libreria_${String(index + 1).padStart(2, "0")}.sql`);
 const sertecNames = Array.from({ length: 5 }, (_, index) => `2026091223${String(index + 11).padStart(2, "0")}00_stock_sertec_${String(index + 1).padStart(2, "0")}.sql`);
-const files = [baseName, repairName, ...libreriaNames, ...sertecNames, finalName];
+const files = [baseName, repairName, constraintsName, ...libreriaNames, ...sertecNames, finalName, productCreateName];
 
 for (const file of files) {
   const full = path.join(migrationsDir, file);
   if (!fs.existsSync(full)) throw new Error(`Missing stock bootstrap migration: ${file}`);
 }
 
+// Supabase identifies migrations by the leading timestamp. Two files with the same
+// version make production deployment ambiguous and must never reach main again.
+const versions = new Map();
+for (const file of fs.readdirSync(migrationsDir).filter((name) => name.endsWith(".sql"))) {
+  const match = file.match(/^(\d{14})_/);
+  if (!match) continue;
+  const same = versions.get(match[1]) ?? [];
+  same.push(file);
+  versions.set(match[1], same);
+}
+for (const [version, same] of versions) {
+  if (same.length > 1) throw new Error(`Duplicate Supabase migration version ${version}: ${same.join(", ")}`);
+}
+
 const read = (file) => fs.readFileSync(path.join(migrationsDir, file), "utf8");
 const base = read(baseName);
 const repair = read(repairName);
+const constraints = read(constraintsName);
 const finalVerify = read(finalName);
+const productCreate = read(productCreateName);
 const libreria = libreriaNames.map(read).join("\n");
 const sertec = sertecNames.map(read).join("\n");
-const all = [base, repair, libreria, sertec, finalVerify].join("\n");
+const all = [base, repair, constraints, libreria, sertec, finalVerify, productCreate].join("\n");
 
 function payloadRows(text) {
   return [...text.matchAll(/\$stock\$\n([\s\S]*?)\n\$stock\$/g)]
@@ -73,6 +91,24 @@ for (const required of [
 }
 
 for (const required of [
+  "LEGACY-DUP-",
+  "greatest(v_stock, 0)",
+  "Código de origen repetido/no disponible para unicidad",
+  "v_insert_codigo_interno",
+]) {
+  if (!constraints.includes(required)) throw new Error(`Missing legacy-constraint/collision safeguard: ${required}`);
+}
+
+for (const required of [
+  "coalesce(p_stock_minimo, 0)",
+  "greatest(coalesce(p_stock_actual, 0), coalesce(p_stock_minimo, 0))",
+  "p_stock_minimo is not null",
+  "p_stock_maximo is not null",
+]) {
+  if (!productCreate.includes(required)) throw new Error(`Product create/edit can violate legacy stock thresholds: ${required}`);
+}
+
+for (const required of [
   "v_empresas_importadas <> 1",
   "SIGO_STOCK_IMPORT_FINAL_TENANT_SPLIT_DETECTED",
   "Librería=983/983 Computación=417/417 Total=1400/1400 tenant=1",
@@ -91,4 +127,4 @@ for (const sentinel of [
   if (!sertec.includes(sentinel)) throw new Error(`Sertec source safeguard missing/corrupt: ${sentinel}`);
 }
 
-console.log("Stock bootstrap verified: one SIGO Administración tenant; Librería 983, Computación 417, total 1400; source sentinels and non-destructive guards present.");
+console.log("Stock bootstrap verified: unique migration versions, one SIGO Administración tenant, Librería 983 + Computación 417 = 1400, collisions preserved and legacy stock constraints honored.");
