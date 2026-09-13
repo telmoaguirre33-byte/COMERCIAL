@@ -178,6 +178,85 @@
   justify-self: center;
 }
 
+.sigo-auth-trial,
+.sigo-auth-subscription {
+  width: 100%;
+  min-height: 50px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.sigo-auth-trial {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.sigo-auth-subscription {
+  border: 1px solid #d9e0ea;
+  background: #fff;
+  color: #0f172a;
+}
+
+.sigo-subscription-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #e3e9f2;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, .07);
+}
+
+.sigo-subscription-provider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sigo-subscription-provider strong,
+.sigo-subscription-provider small {
+  display: block;
+}
+
+.sigo-subscription-provider strong {
+  color: #0f172a;
+  font-size: 17px;
+}
+
+.sigo-subscription-provider small {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.sigo-subscription-logo {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: #eaf6ff;
+  color: #009ee3;
+  font-weight: 950;
+  letter-spacing: -.04em;
+}
+
+.sigo-mercadopago-button {
+  background: linear-gradient(135deg, #009ee3, #118fd1);
+  box-shadow: 0 12px 24px rgba(0, 158, 227, .22);
+}
+
+.sigo-subscription-note {
+  margin: 0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: center;
+}
+
 .sigo-auth-help {
   margin-top: 22px;
   padding-top: 18px;
@@ -209,8 +288,15 @@
   }
 
   .sigo-auth-field input,
-  .sigo-auth-submit {
+  .sigo-auth-submit,
+  .sigo-auth-trial,
+  .sigo-auth-subscription {
     min-height: 54px;
     font-size: 16px;
+  }
+
+  .sigo-subscription-card {
+    border-radius: 18px;
+    padding: 16px;
   }
 }
