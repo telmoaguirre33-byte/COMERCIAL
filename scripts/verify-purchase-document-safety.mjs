@@ -5,9 +5,10 @@ const checks = [
     'src/compras.ts',
     [
       'PURCHASE_DOCUMENT_DUPLICATE',
-      '.eq("numero_comprobante", numeroComprobante)',
+      'normalizarDocumento(compra.numero_comprobante) === documentoNormalizado',
       '.eq("proveedor_id", proveedorId)',
       '.eq("cuit", cuit)',
+      '.limit(200)',
       'evitar duplicar stock y costos',
     ],
   ],
