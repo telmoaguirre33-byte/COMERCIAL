@@ -32,6 +32,8 @@ for (const [needle, label] of [
   ['empresasImportadas !== 1', 'single import tenant check'],
   ['contarIdentidadesDuplicadas', 'duplicate barcode/internal-code detector'],
   ['identidadesDuplicadas !== 0', 'ambiguous scanner identity block'],
+  ['LEGACY_DUP_PREFIX = "LEGACY-DUP-"', 'legacy collision marker'],
+  ['legacyDupPendientes !== 0', 'physical barcode review block'],
   ['productosSinCodigo !== 0', 'missing product identity block'],
   ['stockNegativo !== 0', 'negative stock block'],
   ['vendiblesConStock === 0', 'real sale candidate check'],
@@ -58,4 +60,4 @@ for (const [needle, label] of [
   requireText(matriz, needle, label);
 }
 
-console.log('Live operational readiness guard OK: read-only unique 983 + 417 = 1,400 verification, full catalog pagination, scanner identity and sellable-stock checks');
+console.log('Live operational readiness guard OK: read-only unique 983 + 417 = 1,400 verification, full catalog pagination, scanner identity, LEGACY-DUP physical review and sellable-stock checks');
