@@ -15,8 +15,12 @@ const readiness = fs.readFileSync(readinessPath, "utf8");
 for (const required of [
   "SUPABASE_DB_PASSWORD",
   "SUPABASE_PROJECT_REF",
+  "SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}",
   "SIGO_DB_URL",
+  "SIGO_DB_URL_SOURCE=configured",
+  "SIGO_DB_URL_SOURCE=direct",
   "SIGO_DB_MODE=direct",
+  "Session pooler connection string",
   "supabase migration list --db-url",
   "supabase db push --db-url",
   "supabase migration repair --db-url",
@@ -28,6 +32,15 @@ for (const required of [
 // Un token de Management vencido no puede volver a bloquear migraciones de negocio.
 if (/for key in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF/.test(workflow)) {
   throw new Error("SUPABASE_ACCESS_TOKEN must not be mandatory for production database migrations");
+}
+
+// El URL directo de Supabase puede requerir IPv6. CI alojado debe poder usar un
+// Session pooler suministrado como secret sin escribir ni revelar el valor.
+if (!workflow.includes('echo "::add-mask::$SUPABASE_DB_URL"')) {
+  throw new Error("Configured SUPABASE_DB_URL must be masked before use");
+}
+if (!workflow.includes('if [ -n "${SUPABASE_DB_URL:-}" ]; then')) {
+  throw new Error("Configured SUPABASE_DB_URL must take precedence over direct IPv6 fallback");
 }
 
 for (const required of [
@@ -55,4 +68,4 @@ for (const destructive of [
   if (destructive.test(readiness)) throw new Error(`Destructive readiness migration pattern detected: ${destructive}`);
 }
 
-console.log("Production readiness verified: 1400-row single-tenant certification, real catalog floor, null-cost guard and direct DB deployment fallback are protected by CI.");
+console.log("Production readiness verified: 1400-row single-tenant certification, live catalog floor, null-cost guard and pooler-ready DB deployment fallback are protected by CI.");
