@@ -21,9 +21,13 @@ for (const [needle, label] of [
   ['COMPUTACION_PATTERN', 'Computacion import selector'],
   ['LIBRERIA_LOTES_ESPERADOS = 10', '10 Libreria batches'],
   ['COMPUTACION_LOTES_ESPERADOS = 5', '5 Computacion batches'],
+  ['TOTAL_LOTES_ESPERADOS', 'exact 15-batch total'],
   ['libreriaSource !== 983', '983 Libreria check'],
   ['computacionSource !== 417', '417 Computacion check'],
   ['totalSource !== 1400', '1,400 total check'],
+  ['totalLotes !== TOTAL_LOTES_ESPERADOS', 'exact batch-count check'],
+  ['lotesDuplicados !== 0', 'duplicate import-key block'],
+  ['duplicate_batch_keys=', 'duplicate batch evidence'],
   ['inserted + skipped !== source', 'per-batch idempotency check'],
   ['verified !== source', 'per-batch verification check'],
   ['catalogoProductos < 1400', 'live catalog count check'],
@@ -60,4 +64,4 @@ for (const [needle, label] of [
   requireText(matriz, needle, label);
 }
 
-console.log('Live operational readiness guard OK: read-only unique 983 + 417 = 1,400 verification, full catalog pagination, scanner identity, LEGACY-DUP physical review and sellable-stock checks');
+console.log('Live operational readiness guard OK: read-only unique 983 + 417 = 1,400 verification, exactly 15 unique batches, full catalog pagination, scanner identity, LEGACY-DUP physical review and sellable-stock checks');
