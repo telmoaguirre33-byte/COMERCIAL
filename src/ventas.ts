@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { listarProductosSigo } from "./productos";
 
 export type MedioPagoSigo =
   | "efectivo"
@@ -15,6 +16,10 @@ export type VentaItemSigoInput = {
 };
 
 export type IntegridadVentaSigo = "ok" | "revisar" | "no_verificada";
+
+type EstadoReintentoVenta = "nueva" | "reintento" | "desconocido";
+
+type SnapshotStockVenta = Map<string, number>;
 
 export type VentaRecienteSigo = {
   id: string;
@@ -35,6 +40,8 @@ const MEDIOS_PAGO_VALIDOS: MedioPagoSigo[] = [
   "cuenta_corriente",
   "otro",
 ];
+
+const STOCK_TOLERANCIA = 0.0005;
 
 function crearIdempotencyKey() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -62,6 +69,12 @@ function consolidarItemsVenta(items: VentaItemSigoInput[]): VentaItemSigoInput[]
   }
 
   return Array.from(cantidades, ([productoId, cantidad]) => ({ productoId, cantidad }));
+}
+
+function combinarIntegridad(...estados: IntegridadVentaSigo[]): IntegridadVentaSigo {
+  if (estados.some((estado) => estado === "revisar")) return "revisar";
+  if (estados.length > 0 && estados.every((estado) => estado === "ok")) return "ok";
+  return "no_verificada";
 }
 
 function mensajeVenta(error: unknown): string {
@@ -127,6 +140,106 @@ async function verificarIntegridadVentas(
   return resultado;
 }
 
+async function detectarEstadoReintento(
+  empresaId: string,
+  idempotencyKey: string,
+): Promise<EstadoReintentoVenta> {
+  try {
+    const { data, error } = await supabase
+      .from("ventas_sigo")
+      .select("id")
+      .eq("empresa_id", empresaId)
+      .eq("idempotency_key", idempotencyKey)
+      .limit(1);
+    if (error) return "desconocido";
+    return Array.isArray(data) && data.length > 0 ? "reintento" : "nueva";
+  } catch {
+    return "desconocido";
+  }
+}
+
+async function capturarStockAntes(
+  empresaId: string,
+  items: VentaItemSigoInput[],
+  estadoReintento: EstadoReintentoVenta,
+): Promise<SnapshotStockVenta | null> {
+  if (estadoReintento !== "nueva") return null;
+  try {
+    const productos = await listarProductosSigo(empresaId);
+    const porId = new Map(productos.map((producto) => [producto.id, producto]));
+    const snapshot: SnapshotStockVenta = new Map();
+    for (const item of items) {
+      const stock = Number(porId.get(item.productoId)?.stock_actual);
+      if (!Number.isFinite(stock)) return null;
+      snapshot.set(item.productoId, stock);
+    }
+    return snapshot;
+  } catch {
+    return null;
+  }
+}
+
+async function verificarIntegridadStockVenta(
+  empresaId: string,
+  ventaId: string,
+  items: VentaItemSigoInput[],
+  stockAntes: SnapshotStockVenta | null,
+  estadoReintento: EstadoReintentoVenta,
+): Promise<IntegridadVentaSigo> {
+  try {
+    const { data: detalle, error: detalleError } = await supabase
+      .from("venta_items_sigo")
+      .select("producto_id,cantidad")
+      .eq("empresa_id", empresaId)
+      .eq("venta_id", ventaId);
+
+    if (detalleError) return "no_verificada";
+
+    const esperado = new Map(items.map((item) => [item.productoId, Number(item.cantidad)]));
+    const registrado = new Map<string, number>();
+    for (const fila of detalle ?? []) {
+      const productoId = normalizarIdentificador(fila.producto_id);
+      const cantidad = Number(fila.cantidad);
+      if (!productoId || !Number.isFinite(cantidad) || cantidad <= 0) return "revisar";
+      registrado.set(productoId, (registrado.get(productoId) ?? 0) + cantidad);
+    }
+
+    if (registrado.size !== esperado.size) return "revisar";
+    for (const [productoId, cantidad] of esperado) {
+      if (Math.abs((registrado.get(productoId) ?? Number.NaN) - cantidad) > STOCK_TOLERANCIA) return "revisar";
+    }
+
+    // Un retry idempotente devuelve la venta existente sin volver a descontar stock.
+    // Si no podemos demostrar que la llamada era nueva, validamos el detalle pero no
+    // atribuimos el stock actual exclusivamente a esta confirmación.
+    if (estadoReintento !== "nueva" || !stockAntes) return "no_verificada";
+
+    const productosDespues = await listarProductosSigo(empresaId);
+    const despuesPorId = new Map(productosDespues.map((producto) => [producto.id, producto]));
+    let huboMovimientoConcurrente = false;
+
+    for (const item of items) {
+      const antes = stockAntes.get(item.productoId);
+      const despues = Number(despuesPorId.get(item.productoId)?.stock_actual);
+      if (antes == null || !Number.isFinite(despues)) return "no_verificada";
+      const esperadoDespues = antes - item.cantidad;
+
+      if (despues > esperadoDespues + STOCK_TOLERANCIA) {
+        // El stock no refleja el descuento esperado (o hubo una entrada concurrente): requiere revisión.
+        return "revisar";
+      }
+      if (despues < esperadoDespues - STOCK_TOLERANCIA) {
+        // Otra salida concurrente puede haber ocurrido. La venta existe, pero no atribuimos el delta completo.
+        huboMovimientoConcurrente = true;
+      }
+    }
+
+    return huboMovimientoConcurrente ? "no_verificada" : "ok";
+  } catch {
+    return "no_verificada";
+  }
+}
+
 export async function listarVentasRecientesSigo(empresaId: string, limite = 10): Promise<VentaRecienteSigo[]> {
   const empresaNormalizada = normalizarIdentificador(empresaId);
   if (!empresaNormalizada) return [];
@@ -184,6 +297,9 @@ export async function confirmarVentaSigo(input: {
   const idempotencyKey = normalizarIdentificador(input.idempotencyKey ?? crearIdempotencyKey());
   if (!idempotencyKey) throw new Error("No se pudo generar una clave segura para confirmar la venta.");
 
+  const estadoReintento = await detectarEstadoReintento(empresaId, idempotencyKey);
+  const stockAntes = await capturarStockAntes(empresaId, itemsConsolidados, estadoReintento);
+
   const { data, error } = await supabase.rpc("confirmar_venta_sigo_v2", {
     p_empresa_id: empresaId,
     p_items: itemsConsolidados.map((item) => ({
@@ -199,9 +315,18 @@ export async function confirmarVentaSigo(input: {
   const ventaId = normalizarIdentificador(typeof data === "string" ? data : String(data ?? ""));
   if (!ventaId) throw new Error("La venta no devolvió comprobante. No la repitas hasta verificar su estado.");
 
-  const integridad = await verificarIntegridadVentas(empresaId, [{ id: ventaId, medio_pago: input.medioPago }])
-    .then((mapa) => mapa.get(ventaId) ?? "no_verificada")
-    .catch(() => "no_verificada" as const);
+  // Ningún fallo de conciliación posterior vuelve a ejecutar la venta: si la RPC confirmó,
+  // reportamos integridad y dejamos al operador revisar, evitando dobles descuentos/cobros.
+  const [integridadCaja, integridadStock] = await Promise.all([
+    verificarIntegridadVentas(empresaId, [{ id: ventaId, medio_pago: input.medioPago }])
+      .then((mapa) => mapa.get(ventaId) ?? "no_verificada")
+      .catch(() => "no_verificada" as const),
+    verificarIntegridadStockVenta(empresaId, ventaId, itemsConsolidados, stockAntes, estadoReintento),
+  ]);
 
-  return { ventaId, idempotencyKey, integridad };
+  return {
+    ventaId,
+    idempotencyKey,
+    integridad: combinarIntegridad(integridadCaja, integridadStock),
+  };
 }
