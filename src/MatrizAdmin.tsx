@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  validarReadinessSigoAdministracion,
+  type OperationalReadinessResult,
+} from "./operationalReadiness";
 import { supabase } from "./supabase";
 
 type EmpresaMatriz = {
@@ -50,6 +54,8 @@ export default function MatrizAdmin({ onOpenEmpresa }: Props) {
   const [workingId, setWorkingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
+  const [readiness, setReadiness] = useState<OperationalReadinessResult | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
 
   async function cargar() {
     setLoading(true);
@@ -105,6 +111,45 @@ export default function MatrizAdmin({ onOpenEmpresa }: Props) {
     );
   }, [empresas, busqueda]);
 
+  async function validarOperacionPropia() {
+    if (readinessLoading) return;
+    setReadinessLoading(true);
+    setError("");
+    setMensaje("");
+    try {
+      const resultado = await validarReadinessSigoAdministracion(
+        empresas.map((empresa) => ({
+          empresa_id: empresa.empresa_id,
+          nombre: empresa.nombre,
+          activa: empresa.activa,
+        })),
+      );
+      setReadiness(resultado);
+      setMensaje(
+        resultado.ok
+          ? "SIGO Administración superó la verificación en vivo de tenant, carga inicial, catálogo y costos."
+          : "La verificación en vivo terminó con puntos para revisar; no se certifica la carga todavía.",
+      );
+    } catch (e) {
+      console.error(e);
+      setReadiness(null);
+      setError("No pudimos leer la evidencia operativa. La validación es de solo lectura y no modificó productos ni stock.");
+    } finally {
+      setReadinessLoading(false);
+    }
+  }
+
+  async function copiarEvidenciaReadiness() {
+    if (!readiness?.evidence) return;
+    try {
+      await navigator.clipboard.writeText(readiness.evidence);
+      setMensaje("Evidencia operativa copiada.");
+    } catch (e) {
+      console.error(e);
+      setError("No se pudo copiar automáticamente la evidencia; podés seleccionarla manualmente.");
+    }
+  }
+
   async function cambiarEstado(empresa: EmpresaMatriz) {
     const proximo = !empresa.activa;
     const accion = proximo ? "reactivar" : "suspender";
@@ -119,6 +164,7 @@ export default function MatrizAdmin({ onOpenEmpresa }: Props) {
       });
       if (rpcError) throw rpcError;
       setMensaje(`${empresa.nombre}: estado actualizado correctamente.`);
+      setReadiness(null);
       await cargar();
     } catch (e) {
       console.error(e);
@@ -183,6 +229,44 @@ export default function MatrizAdmin({ onOpenEmpresa }: Props) {
           <article className="stat-card"><span>Usuarios</span><strong>{resumen.usuarios_activos}</strong><small>Miembros activos</small></article>
           <article className="stat-card"><span>Portal Cliente</span><strong>{resumen.clientes_portal}</strong><small>Usuarios cliente</small></article>
         </div>
+
+        <section className="panel" aria-label="Verificación operativa de SIGO Administración">
+          <div className="panel-header">
+            <div>
+              <h3>Preparación operativa · SIGO Administración</h3>
+              <p>Control en vivo y de solo lectura: una empresa/caja, 983 Librería + 417 Computación, catálogo y costos no nulos.</p>
+            </div>
+            <button className="primary-button" type="button" onClick={() => void validarOperacionPropia()} disabled={loading || readinessLoading}>
+              {readinessLoading ? "Validando…" : "Validar ahora"}
+            </button>
+          </div>
+
+          {readiness ? (
+            <div style={{ display: "grid", gap: 14 }}>
+              <div className="stats sigo-matriz-stats">
+                <article className="stat-card"><span>Estado</span><strong>{readiness.ok ? "APROBADO" : "REVISAR"}</strong><small>{readiness.empresasSigoAdministracion} SIGO Administración activa</small></article>
+                <article className="stat-card"><span>Librería</span><strong>{readiness.libreriaVerified}/{readiness.libreriaSource}</strong><small>Objetivo 983/983</small></article>
+                <article className="stat-card"><span>Computación</span><strong>{readiness.computacionVerified}/{readiness.computacionSource}</strong><small>Objetivo 417/417</small></article>
+                <article className="stat-card"><span>Total verificado</span><strong>{readiness.totalVerified}/{readiness.totalSource}</strong><small>Objetivo 1400/1400</small></article>
+                <article className="stat-card"><span>Catálogo</span><strong>{readiness.catalogoProductos}</strong><small>Productos visibles en la caja</small></article>
+                <article className="stat-card"><span>Costos NULL</span><strong>{readiness.costosActualesNull}</strong><small>Debe ser 0</small></article>
+              </div>
+
+              {readiness.issues.length > 0 ? (
+                <div className="form-error" role="alert">
+                  {readiness.issues.map((issue) => <div key={issue}>• {issue}</div>)}
+                </div>
+              ) : null}
+
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <code style={{ overflowWrap: "anywhere", fontSize: 12 }}>{readiness.evidence}</code>
+                <button className="admin-button" type="button" onClick={() => void copiarEvidenciaReadiness()}>Copiar evidencia</button>
+              </div>
+            </div>
+          ) : (
+            <div className="empty-state">Todavía no se ejecutó la lectura en vivo. Este control no crea, edita ni elimina productos, stock o históricos.</div>
+          )}
+        </section>
 
         <section className="panel sigo-matriz-panel">
           <div className="panel-header sigo-matriz-tools">
