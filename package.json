@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "verify:critical": "node scripts/verify-critical.mjs && node scripts/verify-idempotency-hardening.mjs && node scripts/verify-onboarding-hardening.mjs && node scripts/verify-operational-ui.mjs && node scripts/verify-invoice-ai.mjs && node scripts/verify-stock-bootstrap.mjs && node scripts/verify-purchase-document-safety.mjs && node scripts/verify-sale-price-safety.mjs && node scripts/verify-purchase-readiness.mjs && node scripts/verify-arca-safety.mjs",
+    "verify:critical": "node scripts/verify-critical.mjs && node scripts/verify-idempotency-hardening.mjs && node scripts/verify-onboarding-hardening.mjs && node scripts/verify-operational-ui.mjs && node scripts/verify-invoice-ai.mjs && node scripts/verify-stock-bootstrap.mjs && node scripts/verify-purchase-document-safety.mjs && node scripts/verify-sale-price-safety.mjs && node scripts/verify-purchase-readiness.mjs && node scripts/verify-arca-safety.mjs && node scripts/verify-production-readiness.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
