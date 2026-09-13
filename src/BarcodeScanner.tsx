@@ -108,9 +108,26 @@ export default function BarcodeScanner({
         if (source === "camera") setCameraStatus("Código duplicado. Revisá el maestro de productos.");
         return;
       }
+
+      const producto = matches[0];
+      if (action === "vender") {
+        const precio = Number(producto.precio_venta ?? 0);
+        if (!Number.isFinite(precio) || precio <= 0) {
+          setError(`${producto.nombre}: definí un precio de venta mayor a cero antes de vender.`);
+          if (source === "camera") setCameraStatus("Producto leído, pero todavía no tiene precio de venta válido.");
+          return;
+        }
+        const stock = Number(producto.stock_actual ?? 0);
+        if (!Number.isFinite(stock) || stock <= 0) {
+          setError(`${producto.nombre}: sin stock disponible para vender.`);
+          if (source === "camera") setCameraStatus("Producto leído, pero no tiene stock disponible.");
+          return;
+        }
+      }
+
       setCode("");
-      onProduct(matches[0], action);
-      if (source === "camera") setCameraStatus(`Listo: ${matches[0].nombre}`);
+      onProduct(producto, action);
+      if (source === "camera") setCameraStatus(`Listo: ${producto.nombre}`);
       if ("vibrate" in navigator) navigator.vibrate?.(40);
     } catch (e) {
       console.error(e);
