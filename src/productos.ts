@@ -53,7 +53,9 @@ function validarNumeroNoNegativo(nombre: string, valor?: number | null) {
 function validarProducto(input: GuardarProductoSigoInput) {
   validarNumeroNoNegativo("COSTO_ACTUAL", input.costoActual);
   validarNumeroNoNegativo("COSTO_ULTIMA_COMPRA", input.costoUltimaCompra);
-  validarNumeroNoNegativo("PRECIO_VENTA", input.precioVenta);
+  if (input.precioVenta != null && (!Number.isFinite(input.precioVenta) || input.precioVenta <= 0)) {
+    throw new Error("El precio de venta debe ser mayor a cero.");
+  }
   validarNumeroNoNegativo("MARGEN_GANANCIA", input.margenGanancia);
   validarNumeroNoNegativo("MARGEN_PORCENTAJE", input.margenPorcentaje);
   validarNumeroNoNegativo("STOCK_ACTUAL", input.stockActual);
