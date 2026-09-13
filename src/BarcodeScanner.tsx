@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buscarProductoPorCodigo,
+  isLegacyDuplicateProduct,
   isLikelyScannerSubmit,
   normalizeBarcode,
   type BarcodeAction,
@@ -110,6 +111,13 @@ export default function BarcodeScanner({
       }
 
       const producto = matches[0];
+      if ((action === "vender" || action === "ingresar") && isLegacyDuplicateProduct(producto)) {
+        const operacion = action === "vender" ? "vender" : "ingresar stock";
+        setError(`${producto.nombre}: identidad de código pendiente de revisión física. SIGO bloqueó ${operacion} para evitar operar sobre el producto equivocado.`);
+        if (source === "camera") setCameraStatus("Código pendiente de revisión física. Operación bloqueada.");
+        return;
+      }
+
       if (action === "vender") {
         const precio = Number(producto.precio_venta ?? 0);
         if (!Number.isFinite(precio) || precio <= 0) {
