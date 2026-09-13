@@ -1,6 +1,7 @@
 -- SIGO: alta de producto sin costo inicial debe ser válida.
--- El costo real entra luego por Compras; al crear el maestro se inicializa en cero
--- para respetar las restricciones NOT NULL históricas sin inventar costos.
+-- El costo real entra luego por Compras; al crear el maestro se inicializan en cero
+-- los campos legacy NOT NULL que no tengan dato real. Umbrales de stock nunca quedan
+-- nulos y la edición no los borra cuando el formulario no los envía.
 -- No modifica productos existentes ni stock histórico.
 
 create or replace function public.guardar_producto_sigo(
@@ -74,8 +75,12 @@ begin
       case when public.tiene_permiso_empresa(p_empresa_id, 'margins.read') then coalesce(p_margen_ganancia, 0) else 0 end,
       case when public.tiene_permiso_empresa(p_empresa_id, 'margins.read') then coalesce(p_margen_porcentaje, 0) else 0 end,
       case when public.tiene_permiso_empresa(p_empresa_id, 'stock.write') then coalesce(p_stock_actual, 0) else 0 end,
-      case when public.tiene_permiso_empresa(p_empresa_id, 'stock.write') then p_stock_minimo else null end,
-      case when public.tiene_permiso_empresa(p_empresa_id, 'stock.write') then p_stock_maximo else null end
+      case when public.tiene_permiso_empresa(p_empresa_id, 'stock.write') then coalesce(p_stock_minimo, 0) else 0 end,
+      case
+        when public.tiene_permiso_empresa(p_empresa_id, 'stock.write') then
+          coalesce(p_stock_maximo, greatest(coalesce(p_stock_actual, 0), coalesce(p_stock_minimo, 0)))
+        else 0
+      end
     ) returning id into v_id;
   else
     update public.productos p
@@ -107,8 +112,14 @@ begin
              when public.tiene_permiso_empresa(p_empresa_id, 'stock.write') and p_stock_actual is not null then p_stock_actual
              else p.stock_actual
            end,
-           stock_minimo = case when public.tiene_permiso_empresa(p_empresa_id, 'stock.write') then p_stock_minimo else p.stock_minimo end,
-           stock_maximo = case when public.tiene_permiso_empresa(p_empresa_id, 'stock.write') then p_stock_maximo else p.stock_maximo end
+           stock_minimo = case
+             when public.tiene_permiso_empresa(p_empresa_id, 'stock.write') and p_stock_minimo is not null then p_stock_minimo
+             else p.stock_minimo
+           end,
+           stock_maximo = case
+             when public.tiene_permiso_empresa(p_empresa_id, 'stock.write') and p_stock_maximo is not null then p_stock_maximo
+             else p.stock_maximo
+           end
      where p.id = p_producto_id and p.empresa_id = p_empresa_id
      returning p.id into v_id;
 
@@ -132,4 +143,4 @@ comment on function public.guardar_producto_sigo(
   uuid, uuid, text, text, text, text, text, text, text,
   numeric, numeric, numeric, numeric, numeric, numeric, numeric, numeric
 ) is
-  'SIGO: alta tenant-safe inicializa costo/margen/stock en cero; Compras actualiza costos y stock después sin inventar históricos.';
+  'SIGO: alta tenant-safe inicializa campos legacy requeridos; Compras actualiza costos/stock y edición no borra umbrales omitidos.';
