@@ -38,6 +38,8 @@ export type OperationalReadinessResult = {
   computacionLotes: number;
   totalSource: number;
   totalVerified: number;
+  totalLotes: number;
+  lotesDuplicados: number;
   lotesInconsistentes: number;
   empresasImportadas: number;
   catalogoProductos: number;
@@ -57,6 +59,7 @@ const LIBRERIA_PATTERN = "resguardo-stock-sigo-2026-09-09-libreria-%";
 const COMPUTACION_PATTERN = "resguardo-stock-sigo-2026-09-09-sertec-%";
 const LIBRERIA_LOTES_ESPERADOS = 10;
 const COMPUTACION_LOTES_ESPERADOS = 5;
+const TOTAL_LOTES_ESPERADOS = LIBRERIA_LOTES_ESPERADOS + COMPUTACION_LOTES_ESPERADOS;
 const PAGE_SIZE = 1000;
 const LEGACY_DUP_PREFIX = "LEGACY-DUP-";
 
@@ -124,6 +127,8 @@ function resultadoVacio(
     computacionLotes: 0,
     totalSource: 0,
     totalVerified: 0,
+    totalLotes: 0,
+    lotesDuplicados: 0,
     lotesInconsistentes: 0,
     empresasImportadas: 0,
     catalogoProductos: 0,
@@ -188,6 +193,9 @@ export async function validarReadinessSigoAdministracion(
   const computacionVerified = sumar(computacion, "verified_rows");
   const totalSource = libreriaSource + computacionSource;
   const totalVerified = libreriaVerified + computacionVerified;
+  const totalLotes = importaciones.length;
+  const lotesUnicos = new Set(importaciones.map((row) => row.import_key.trim()).filter(Boolean));
+  const lotesDuplicados = totalLotes - lotesUnicos.size;
   const empresasImportadasSet = new Set(importaciones.map((row) => row.empresa_id));
   const empresasImportadas = empresasImportadasSet.size;
   const catalogoProductos = Number(productosResp.count ?? 0);
@@ -221,6 +229,12 @@ export async function validarReadinessSigoAdministracion(
   }
   if (computacion.length !== COMPUTACION_LOTES_ESPERADOS) {
     issues.push(`Computación tiene ${computacion.length} lotes; se esperaban ${COMPUTACION_LOTES_ESPERADOS}.`);
+  }
+  if (totalLotes !== TOTAL_LOTES_ESPERADOS) {
+    issues.push(`La carga inicial tiene ${totalLotes} lotes; se esperaban exactamente ${TOTAL_LOTES_ESPERADOS}.`);
+  }
+  if (lotesDuplicados !== 0) {
+    issues.push(`Hay ${lotesDuplicados} clave(s) de lote repetida(s); no se puede certificar una carga inicial única.`);
   }
   if (lotesInconsistentes !== 0) {
     issues.push(`Hay ${lotesInconsistentes} lotes con inserted + skipped o verified distintos del origen.`);
@@ -272,6 +286,8 @@ export async function validarReadinessSigoAdministracion(
     `computacion=${computacionVerified}/${computacionSource}`,
     `computacion_lotes=${computacion.length}/${COMPUTACION_LOTES_ESPERADOS}`,
     `total=${totalVerified}/${totalSource}`,
+    `total_lotes=${totalLotes}/${TOTAL_LOTES_ESPERADOS}`,
+    `duplicate_batch_keys=${lotesDuplicados}`,
     `lotes_inconsistentes=${lotesInconsistentes}`,
     `catalog=${catalogoProductos}`,
     `catalog_loaded=${catalogoLeido}`,
@@ -299,6 +315,8 @@ export async function validarReadinessSigoAdministracion(
     computacionLotes: computacion.length,
     totalSource,
     totalVerified,
+    totalLotes,
+    lotesDuplicados,
     lotesInconsistentes,
     empresasImportadas,
     catalogoProductos,
