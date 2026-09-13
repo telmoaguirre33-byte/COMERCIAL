@@ -3,24 +3,32 @@
 do $$
 declare
   v_empresa_id uuid;
+  v_main_tenant_count integer;
   v_libreria_source integer;
   v_libreria_verified integer;
   v_computacion_source integer;
   v_computacion_verified integer;
   v_empresas_importadas integer;
-  v_costos_null integer;
+  v_productos_tenant integer;
+  v_costos_null_tenant integer;
+  v_costos_null_global integer;
 begin
+  select count(*)
+    into v_main_tenant_count
+    from public.empresas e
+   where lower(trim(e.nombre)) = lower('SIGO Administración')
+     and e.activa = true;
+
+  if v_main_tenant_count <> 1 then
+    raise exception 'SIGO_READINESS_MAIN_TENANT_COUNT_FAILED count=%', v_main_tenant_count;
+  end if;
+
   select e.id
     into v_empresa_id
     from public.empresas e
    where lower(trim(e.nombre)) = lower('SIGO Administración')
      and e.activa = true
-   order by e.created_at asc
    limit 1;
-
-  if v_empresa_id is null then
-    raise exception 'SIGO_READINESS_MAIN_TENANT_NOT_FOUND';
-  end if;
 
   select coalesce(sum(source_rows), 0), coalesce(sum(verified_rows), 0)
     into v_libreria_source, v_libreria_verified
@@ -60,16 +68,39 @@ begin
     raise exception 'SIGO_READINESS_TENANT_SPLIT_DETECTED';
   end if;
 
+  -- El ledger prueba las 1.400 filas fuente; este control adicional comprueba
+  -- que el catálogo real del tenant no haya quedado por debajo de esa carga.
   select count(*)
-    into v_costos_null
+    into v_productos_tenant
+    from public.productos p
+   where p.empresa_id = v_empresa_id;
+
+  if v_productos_tenant < 1400 then
+    raise exception 'SIGO_READINESS_CATALOG_COUNT_FAILED catalog=% expected_at_least=1400', v_productos_tenant;
+  end if;
+
+  select count(*)
+    into v_costos_null_tenant
+    from public.productos p
+   where p.empresa_id = v_empresa_id
+     and p.costo_actual is null;
+
+  if v_costos_null_tenant <> 0 then
+    raise exception 'SIGO_READINESS_NULL_CURRENT_COST_TENANT count=%', v_costos_null_tenant;
+  end if;
+
+  -- La restricción NOT NULL es global, por eso antes de aplicarla verificamos
+  -- que ningún tenant existente vaya a romperse. No se hace backfill destructivo.
+  select count(*)
+    into v_costos_null_global
     from public.productos p
    where p.costo_actual is null;
 
-  if v_costos_null <> 0 then
-    raise exception 'SIGO_READINESS_NULL_CURRENT_COST count=%', v_costos_null;
+  if v_costos_null_global <> 0 then
+    raise exception 'SIGO_READINESS_NULL_CURRENT_COST_GLOBAL count=%', v_costos_null_global;
   end if;
 
-  raise notice 'SIGO_READINESS_STOCK_COST_OK tenant=SIGO Administración libreria=983 computacion=417 total=1400 costo_actual_null=0';
+  raise notice 'SIGO_READINESS_STOCK_COST_OK tenant=SIGO Administración libreria=983 computacion=417 total=1400 catalog=% costo_actual_null=0', v_productos_tenant;
 end
 $$;
 
