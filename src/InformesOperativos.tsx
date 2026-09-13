@@ -46,6 +46,10 @@ function etiquetaSalud(salud: SaludOperativaSigo) {
   return "Bloqueo de base detectado";
 }
 
+function irA(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 export default function InformesOperativos({ empresaId }: { empresaId: string }) {
   const [resumen, setResumen] = useState<ResumenOperativoSigo>(vacio);
   const [salud, setSalud] = useState<SaludOperativaSigo | null>(null);
@@ -92,15 +96,39 @@ export default function InformesOperativos({ empresaId }: { empresaId: string })
 
   const mediosCaja = Object.entries(resumen.cajaHoyPorMedio).sort((a, b) => b[1] - a[1]);
 
+  const catalogo = [
+    { icono: "↗", titulo: "Informe de ventas", texto: "Ventas confirmadas, monto total y actividad del día.", destino: "informe-ventas" },
+    { icono: "◫", titulo: "Informe de stock", texto: "Productos, unidades, faltantes y stock crítico.", destino: "informe-stock" },
+    { icono: "👥", titulo: "Cuenta corriente", texto: "Clientes con deuda y saldo total pendiente de cobro.", destino: "informe-clientes", destacado: true },
+    { icono: "↓", titulo: "Informe de compras", texto: "Compras confirmadas y monto comprado a proveedores.", destino: "informe-compras" },
+    { icono: "$", titulo: "Caja e ingresos", texto: "Ingresos, egresos, neto diario y medios de pago.", destino: "informe-caja" },
+    { icono: "▥", titulo: "Resumen gerencial", texto: "Lectura rápida del negocio y estado operativo de SIGO.", destino: "informe-resumen" },
+  ];
+
   return (
-    <div className="products-page">
-      <div className="page-header">
+    <div className="products-page sigo-reports-page">
+      <div className="page-header sigo-reports-heading">
         <div>
-          <h2>Informes operativos</h2>
-          <p>Indicadores consolidados únicamente de la empresa activa.</p>
+          <h2>Informes</h2>
+          <p>Todo el negocio en una vista clara y rápida.</p>
         </div>
         <button className="admin-button" onClick={() => void cargar(empresaId)}>Actualizar</button>
       </div>
+
+      <section className="sigo-report-catalog" aria-label="Listado de informes">
+        {catalogo.map((item) => (
+          <button
+            key={item.titulo}
+            type="button"
+            className={`sigo-report-card${item.destacado ? " highlighted" : ""}`}
+            onClick={() => irA(item.destino)}
+          >
+            <span className="sigo-report-icon" aria-hidden="true">{item.icono}</span>
+            <strong>{item.titulo}</strong>
+            <span>{item.texto}</span>
+          </button>
+        ))}
+      </section>
 
       {error && (
         <div className="panel" role="alert">
@@ -109,67 +137,70 @@ export default function InformesOperativos({ empresaId }: { empresaId: string })
         </div>
       )}
 
-      {!error && salud && (
-        <div className="panel" role={salud.estado === "operativo" ? undefined : "alert"}>
-          <h3>{etiquetaSalud(salud)}</h3>
-          <p>{salud.operativos}/{salud.total} bloques críticos accesibles para la empresa activa.</p>
-          <div className="stats-grid">
-            {salud.modulos.map((modulo) => (
-              <div className="stat-card" key={modulo.modulo}>
-                <span>{modulo.modulo}</span>
-                <strong>{modulo.estado === "operativo" ? "OK" : modulo.estado === "no_disponible" ? "FALTA SQL" : "REVISAR"}</strong>
-                <small>{modulo.detalle}</small>
-              </div>
-            ))}
-          </div>
-          <small>Última validación: {new Date(salud.verificadoEn).toLocaleString("es-AR")}</small>
-        </div>
-      )}
-
-      {!error && resumen.modulosNoDisponibles.length > 0 && (
-        <div className="panel" role="alert">
-          <h3>Tablero parcial</h3>
-          <p>Los módulos siguientes no respondieron y sus indicadores se muestran en cero: {resumen.modulosNoDisponibles.join(", ")}.</p>
-          <p>El resto del tablero continúa operativo para no ocultar información disponible.</p>
-        </div>
-      )}
-
       {!error && (
         <>
-          <div className="stats-grid">
-            <div className="stat-card"><span>Ventas de hoy</span><strong>{resumen.ventasHoy}</strong><small>{dinero(resumen.ventasHoyTotal)}</small></div>
-            <div className="stat-card"><span>Caja de hoy</span><strong>{dinero(resumen.cajaHoyNeto)}</strong><small>Ingresos {dinero(resumen.cajaHoyIngresos)} · Egresos {dinero(resumen.cajaHoyEgresos)}</small></div>
-            <div className="stat-card"><span>Ventas confirmadas</span><strong>{resumen.ventasCantidad}</strong><small>{dinero(resumen.ventasTotal)}</small></div>
-            <div className="stat-card"><span>Compras confirmadas</span><strong>{resumen.comprasCantidad}</strong><small>{dinero(resumen.comprasTotal)}</small></div>
-            <div className="stat-card"><span>Unidades en stock</span><strong>{resumen.unidadesStock}</strong><small>{resumen.productos} productos</small></div>
-            <div className="stat-card"><span>Stock crítico</span><strong>{resumen.productosCriticos}</strong><small>{resumen.productosSinStock} sin stock</small></div>
-            <div className="stat-card"><span>Clientes</span><strong>{resumen.clientes}</strong><small>{resumen.clientesConDeuda} con deuda</small></div>
-            <div className="stat-card"><span>Saldo a cobrar</span><strong>{dinero(resumen.saldoClientes)}</strong><small>Sólo saldos deudores de cuenta corriente</small></div>
-          </div>
+          <section id="informe-ventas" className="panel sigo-report-detail">
+            <div className="sigo-detail-title"><span>↗</span><h3>Ventas</h3></div>
+            <div className="stats-grid">
+              <div className="stat-card"><span>Ventas de hoy</span><strong>{resumen.ventasHoy}</strong><small>{dinero(resumen.ventasHoyTotal)}</small></div>
+              <div className="stat-card"><span>Ventas confirmadas</span><strong>{resumen.ventasCantidad}</strong><small>{dinero(resumen.ventasTotal)}</small></div>
+            </div>
+          </section>
 
-          <div className="panel">
-            <h3>Caja de hoy por medio de pago</h3>
-            {mediosCaja.length === 0 ? (
-              <p>Sin ingresos de Caja registrados hoy.</p>
-            ) : (
-              <div className="stats-grid">
-                {mediosCaja.map(([medio, total]) => (
-                  <div className="stat-card" key={medio}>
-                    <span>{nombreMedio(medio)}</span>
-                    <strong>{dinero(total)}</strong>
-                    <small>Ingresos registrados</small>
-                  </div>
-                ))}
+          <section id="informe-stock" className="panel sigo-report-detail">
+            <div className="sigo-detail-title"><span>◫</span><h3>Stock</h3></div>
+            <div className="stats-grid">
+              <div className="stat-card"><span>Unidades en stock</span><strong>{resumen.unidadesStock}</strong><small>{resumen.productos} productos</small></div>
+              <div className="stat-card"><span>Stock crítico</span><strong>{resumen.productosCriticos}</strong><small>{resumen.productosSinStock} sin stock</small></div>
+            </div>
+          </section>
+
+          <section id="informe-clientes" className="panel sigo-report-detail">
+            <div className="sigo-detail-title"><span>👥</span><h3>Cuenta corriente</h3></div>
+            <div className="stats-grid">
+              <div className="stat-card"><span>Clientes</span><strong>{resumen.clientes}</strong><small>{resumen.clientesConDeuda} con deuda</small></div>
+              <div className="stat-card"><span>Saldo a cobrar</span><strong>{dinero(resumen.saldoClientes)}</strong><small>Sólo saldos deudores</small></div>
+            </div>
+          </section>
+
+          <section id="informe-compras" className="panel sigo-report-detail">
+            <div className="sigo-detail-title"><span>↓</span><h3>Compras</h3></div>
+            <div className="stats-grid">
+              <div className="stat-card"><span>Compras confirmadas</span><strong>{resumen.comprasCantidad}</strong><small>{dinero(resumen.comprasTotal)}</small></div>
+            </div>
+          </section>
+
+          <section id="informe-caja" className="panel sigo-report-detail">
+            <div className="sigo-detail-title"><span>$</span><h3>Caja de hoy</h3></div>
+            <div className="stats-grid">
+              <div className="stat-card"><span>Neto</span><strong>{dinero(resumen.cajaHoyNeto)}</strong><small>Ingresos {dinero(resumen.cajaHoyIngresos)} · Egresos {dinero(resumen.cajaHoyEgresos)}</small></div>
+              {mediosCaja.map(([medio, total]) => (
+                <div className="stat-card" key={medio}>
+                  <span>{nombreMedio(medio)}</span>
+                  <strong>{dinero(total)}</strong>
+                  <small>Ingresos registrados</small>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section id="informe-resumen" className="panel sigo-report-detail">
+            <div className="sigo-detail-title"><span>▥</span><h3>Resumen gerencial</h3></div>
+            <p>SIGO consolida ventas confirmadas, caja, compras, stock y cuentas corrientes sin mezclar empresas.</p>
+            {salud && (
+              <div className="sigo-health-inline" role={salud.estado === "operativo" ? undefined : "alert"}>
+                <strong>{etiquetaSalud(salud)}</strong>
+                <span>{salud.operativos}/{salud.total} bloques críticos accesibles.</span>
               </div>
             )}
-          </div>
+          </section>
 
-          <div className="panel">
-            <h3>Lectura gerencial rápida</h3>
-            <p>
-              SIGO consolida ventas confirmadas, caja, compras confirmadas, stock y cuentas corrientes sin mezclar empresas. Además valida en tiempo de ejecución si la base productiva tiene disponibles los bloques críticos, para distinguir un módulo vacío de una migración faltante o un problema de permisos.
-            </p>
-          </div>
+          {resumen.modulosNoDisponibles.length > 0 && (
+            <div className="panel" role="alert">
+              <h3>Tablero parcial</h3>
+              <p>Los módulos siguientes no respondieron y sus indicadores se muestran en cero: {resumen.modulosNoDisponibles.join(", ")}.</p>
+            </div>
+          )}
         </>
       )}
     </div>
