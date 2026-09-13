@@ -2,8 +2,9 @@ import fs from 'node:fs';
 
 const checks = [
   ['src/ComprasOperativas.tsx', ['Escanear factura con IA', 'Tomar foto de factura', 'capture="environment"', 'Usar datos de esta factura', 'guardarProductoSigo', 'analizarFacturaCompraSigo', 'Confirmar compra e ingresar stock']],
-  ['src/facturaIA.ts', ['analizarFacturaCompraSigo', '/api/compras/analizar-factura', 'image/jpeg', 'AI_NOT_CONFIGURED', 'validarFactura']],
-  ['api/compras/analizar-factura.js', ['OPENAI_API_KEY', 'purchases.write', '/v1/responses', 'input_image', 'No inventes datos', 'normalizarFacturaIA', 'MAX_INVOICE_ITEMS', 'NO_VALID_INVOICE_ITEMS']],
+  ['src/facturaIA.ts', ['analizarFacturaCompraSigo', '/api/compras/analizar-factura', 'TIPOS_IMAGEN_PERMITIDOS', 'CLIENT_TIMEOUT_MS', 'AbortController', 'AI_TIMEOUT', 'moneda !== "ARS"', 'validarFactura']],
+  ['api/compras/analizar-factura.js', ['OPENAI_API_KEY', 'purchases.write', '/v1/responses', 'input_image', 'No inventes datos', 'normalizarFacturaIA', 'MAX_INVOICE_ITEMS', 'NO_VALID_INVOICE_ITEMS', 'OPENAI_TIMEOUT_MS', 'AbortController', 'AI_TIMEOUT', 'normalizarMoneda']],
+  ['supabase/migrations/20260913023000_compras_identidad_documental_guard.sql', ['normalizar_identificador_comercial_sigo', 'trg_guard_compra_documento_normalizado_sigo', 'PURCHASE_DOCUMENT_DUPLICATE', 'trg_guard_proveedor_cuit_sigo', 'SUPPLIER_CUIT_DUPLICATE']],
 ];
 
 for (const [file, required] of checks) {
@@ -23,5 +24,14 @@ if (!api.includes('itemsRaw.slice(0, MAX_INVOICE_ITEMS)') && !api.includes('raw.
 }
 if (!api.includes('cuitLeido.length === 11')) throw new Error('Invoice AI regression: server must validate CUIT length');
 if (!api.includes('Number.isFinite')) throw new Error('Invoice AI regression: server must reject non-finite numeric values');
+if (!api.includes('signal: controller.signal')) throw new Error('Invoice AI regression: OpenAI request must have a timeout signal');
+
+const client = fs.readFileSync('src/facturaIA.ts', 'utf8');
+if (!client.includes('new Set(["image/jpeg", "image/png", "image/webp"])')) {
+  throw new Error('Invoice AI regression: client must only accept supported invoice image types');
+}
+if (!client.includes('moneda && moneda !== "ARS"')) {
+  throw new Error('Invoice AI regression: non-ARS invoices must not be silently applied as pesos');
+}
 
 console.log('AI purchase invoice flow: OK');
