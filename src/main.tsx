@@ -10,6 +10,7 @@ import "./native-app.css";
 import "./don-benchmark.css";
 import "./arca-facturacion.css";
 import "./reports-catalog.css";
+import "./logout-visible.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
