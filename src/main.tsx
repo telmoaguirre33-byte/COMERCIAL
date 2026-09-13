@@ -9,6 +9,7 @@ import "./premium-mobile.css";
 import "./native-app.css";
 import "./don-benchmark.css";
 import "./arca-facturacion.css";
+import "./reports-catalog.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
