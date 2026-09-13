@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 
 const checks = [
-  ['src/ComprasOperativas.tsx', ['Escanear factura con IA', 'Tomar foto de factura', 'capture="environment"', 'Usar datos de esta factura', 'guardarProductoSigo', 'analizarFacturaCompraSigo', 'Confirmar compra e ingresar stock']],
+  ['src/ComprasOperativas.tsx', ['Escanear factura con IA', 'Tomar foto de factura', 'capture="environment"', 'Usar datos de esta factura', 'guardarProductoSigo', 'analizarFacturaCompraSigo', 'Confirmar compra e ingresar stock', 'preciosVentaFactura', 'preciosFacturaPendientes', 'NUEVO · requiere precio', 'SIGO no los creará sin precio']],
   ['src/facturaIA.ts', ['analizarFacturaCompraSigo', '/api/compras/analizar-factura', 'TIPOS_IMAGEN_PERMITIDOS', 'CLIENT_TIMEOUT_MS', 'AbortController', 'AI_TIMEOUT', 'moneda !== "ARS"', 'validarFactura']],
   ['api/compras/analizar-factura.js', ['OPENAI_API_KEY', 'purchases.write', '/v1/responses', 'input_image', 'No inventes datos', 'normalizarFacturaIA', 'MAX_INVOICE_ITEMS', 'NO_VALID_INVOICE_ITEMS', 'OPENAI_TIMEOUT_MS', 'AbortController', 'AI_TIMEOUT', 'normalizarMoneda']],
   ['supabase/migrations/20260913023000_compras_identidad_documental_guard.sql', ['normalizar_identificador_comercial_sigo', 'trg_guard_compra_documento_normalizado_sigo', 'PURCHASE_DOCUMENT_DUPLICATE', 'trg_guard_proveedor_cuit_sigo', 'SUPPLIER_CUIT_DUPLICATE']],
@@ -15,7 +15,8 @@ for (const [file, required] of checks) {
 }
 
 const compras = fs.readFileSync('src/ComprasOperativas.tsx', 'utf8');
-if (!compras.includes('precioVenta: null')) throw new Error('Invoice AI regression: new products must not invent sale prices');
+if (!compras.includes('precioVenta,')) throw new Error('Invoice AI regression: new products must persist the operator-defined sale price');
+if (!compras.includes('preciosFacturaPendientes > 0')) throw new Error('Invoice AI regression: invoice apply must remain blocked while a new product has no sale price');
 if (!compras.includes('stockActual: null')) throw new Error('Invoice AI regression: AI must not write stock before purchase confirmation');
 
 const api = fs.readFileSync('api/compras/analizar-factura.js', 'utf8');
