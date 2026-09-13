@@ -6,6 +6,7 @@ import "./index.css";
 import "./barcode-scanner.css";
 import "./premium-mobile.css";
 import "./native-app.css";
+import "./don-benchmark.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
