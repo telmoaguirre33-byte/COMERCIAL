@@ -1,10 +1,10 @@
 import type { RolEmpresaSigo } from "./tenant";
 
-export type SigoWorkspace = "operacion" | "usuarios" | "clientes" | "compras" | "facturacion" | "informes" | "portal";
+export type SigoWorkspace = "operacion" | "usuarios" | "clientes" | "compras" | "informes" | "portal";
 
 const WORKSPACES_BY_ROLE: Record<RolEmpresaSigo, readonly SigoWorkspace[]> = {
-  owner: ["operacion", "usuarios", "clientes", "compras", "facturacion", "informes"],
-  admin: ["operacion", "usuarios", "clientes", "compras", "facturacion", "informes"],
+  owner: ["operacion", "usuarios", "clientes", "compras", "informes"],
+  admin: ["operacion", "usuarios", "clientes", "compras", "informes"],
   // Vendedor usa clientes dentro del flujo de venta, pero no entra al workspace
   // completo de cuentas corrientes hasta disponer de una vista estrictamente
   // de solo lectura acorde a clients.read.
