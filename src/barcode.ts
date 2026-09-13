@@ -26,12 +26,22 @@ export type BarcodeProduct = {
   stock_maximo: number | null;
 };
 
+export const LEGACY_DUP_PRODUCT_PREFIX = "LEGACY-DUP-";
+
 export function normalizeBarcode(raw: string): string {
   return String(raw ?? "")
     .replace(/[\u0000-\u001F\u007F]/g, "")
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
     .trim()
     .slice(0, 128);
+}
+
+export function isLegacyDuplicateProduct(
+  product: Pick<BarcodeProduct, "codigo_interno">,
+): boolean {
+  return normalizeBarcode(product.codigo_interno ?? "")
+    .toUpperCase()
+    .startsWith(LEGACY_DUP_PRODUCT_PREFIX);
 }
 
 function normalizarEmpresaId(raw: string): string {
